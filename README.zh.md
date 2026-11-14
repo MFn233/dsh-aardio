@@ -6,6 +6,12 @@
 
 [English](README.md) | 中文 · [GitHub](https://github.com/MFn233/dsh-aardio)
 
+## 界面
+
+![dsh-aardio 桥接窗口：状态、当前代码与实时活动流](https://raw.githubusercontent.com/MFn233/dsh-aardio/main/docs/bridge.png)
+
+<sub>`aardio_exec` 执行时，桥接窗口会显示它在做什么：请求来源与模式、当前代码、逐行 `print`、编译失败，以及每次结果的耗时。</sub>
+
 ## 包含什么
 
 | 类型 | 名称 | 作用 |

@@ -6,6 +6,12 @@ The [aardio](https://aardio.com) toolchain for DeepSeek Harness: three bundled a
 
 English | [中文](README.zh.md) · [GitHub](https://github.com/MFn233/dsh-aardio)
 
+## What it looks like
+
+![The dsh-aardio bridge window: status, the code being run, and a live activity feed](https://raw.githubusercontent.com/MFn233/dsh-aardio/main/docs/bridge.png)
+
+<sub>The bridge window reports what it is doing while `aardio_exec` runs: request source and mode, the code, live `print` lines, compile failures, and each result with its duration.</sub>
+
 ## What you get
 
 | Kind | Name | What it does |
