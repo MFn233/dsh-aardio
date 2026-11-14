@@ -91,30 +91,40 @@ var runCode = function(code, mode) {
 
 		var ok, value, valueErr = call(func);
 
-		var okJson, json = call(function(v) {
-			return ..JSON.stringify(v);
-		}, null, value);
+		var text = "";
+		var textType = "null";
+		var errorText = "";
 
-		var text;
-		if (okJson) {
-			text = json;
+		if (ok) {
+			var okJson, json = call(function(v) {
+				return ..JSON.stringify(v);
+			}, null, value);
+
+			if (okJson) {
+				text = json;
+			} else {
+				text = tostring(value);
+			}
+			textType = tostring(type(value));
 		} else {
-			text = tostring(value);
+			// call() 在失败时把错误放在第一个返回值里，第 2 个返回值通常为空。
+			var message;
+			if (value) {
+				message = value;
+			} else {
+				message = valueErr;
+			}
+			errorText = tostring(message);
 		}
 
 		if (#text > 200000) {
 			text = ..string.left(text, 200000) ++ "…[已截断]";
 		}
 
-		var errorText = "";
-		if (valueErr) {
-			errorText = tostring(valueErr);
-		}
-
 		return {
 			ok = ok;
 			value = text;
-			valueType = tostring(type(value));
+			valueType = textType;
 			error = errorText;
 			print = output;
 		};
