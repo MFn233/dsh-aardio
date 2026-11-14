@@ -1,6 +1,6 @@
 {
   "name": "dsh-aardio",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "aardio toolchain for DeepSeek Harness: bundled writing skills, a keyword search engine over your installation, open-in-IDE, and a settings page for the aardio folder.",
   "keywords": [
     "dsh",

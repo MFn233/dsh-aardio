@@ -9,7 +9,7 @@ One npm package, one git tag per release. The plugin has no build step: `index.j
 cd <repo>
 npm test                       # 107 offline tests, no DSH needed
 npm run check                  # node --check on the two entry points
-npm pack --dry-run             # must list 26 files, about 65 kB packed
+npm pack --dry-run             # must list 28 files, about 95 kB packed
 ```
 
 `package.json` `files` decides the tarball. If you add a runtime folder, add it there and
@@ -78,8 +78,8 @@ npm view dsh-aardio version --registry https://registry.npmjs.org
 npm view dsh-aardio@x.y.z dist.fileCount dist.unpackedSize dist.shasum --registry https://registry.npmjs.org
 ```
 
-`fileCount` must be 26 and `dist.shasum` must equal the `shasum` line from
-`npm pack --dry-run` of the same tree. To inspect the real tarball:
+`fileCount` must match the `npm pack --dry-run` count and `dist.shasum` must equal the
+`shasum` line from that same run. To inspect the real tarball:
 
 ```powershell
 npm pack dsh-aardio@x.y.z --registry https://registry.npmjs.org --pack-destination $env:TEMP

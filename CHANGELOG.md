@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.0.1
+
+Documentation and window polish on top of 1.0.0; no protocol or tool change.
+
+- **The bridge window no longer shows an absolute path.** Its footer and startup line read `%TEMP%\dsh-aardio-bridge`, so screenshots and pasted logs no longer carry the user name.
+- **Both READMEs open with a screenshot** of the bridge window at rest: status, the code that last ran, and the activity feed.
+- **`docs/RELEASE.md`** documents the release ritual: pre-flight checks, version and changelog rules, tag handling, publishing with 2FA or a bypass token, the npm staging area and its `409`, artifact verification, and which change needs a DSH restart, a page refresh, or F5 in the IDE.
+
 ## 1.0.0
 
 The first publishable release: the aardio folder is a setting, the skills ship inside the package, and the search engine is built for an agent.
