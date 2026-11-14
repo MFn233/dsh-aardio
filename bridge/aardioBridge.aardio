@@ -156,8 +156,10 @@ var startJob = function(request) {
 	var key = "(dsh-aardio:job:" ++ nonce ++ ")";
 	thread.set(key, null);
 
+	//代码在线程内编译：loadcode 会把函数的全局作用域绑到调用它的线程，
+	//这样下面的 print / win.loopMessage 覆盖才会对它生效。
 	var handle = thread.create(
-		function(func, key) {
+		function(code, key) {
 			import JSON;
 			import win;
 
@@ -178,6 +180,18 @@ var startJob = function(request) {
 
 			//冒烟代码里如果写了 win.loopMessage()，在这里变成有限等待，不会永久阻塞。
 			..win.loopMessage = lambda() ..thread.delay(5000);
+
+			var func, compileErr = loadcode(code);
+			if (!func) {
+				..thread.set(key, {
+					ok = false;
+					value = "";
+					valueType = "null";
+					error = "线程内编译失败：" ++ tostring(compileErr);
+					print = output;
+				});
+				return;
+			}
 
 			var ok, value, valueErr = call(func);
 
@@ -218,7 +232,7 @@ var startJob = function(request) {
 				error = errorText;
 				print = output;
 			});
-		}, func, key);
+		}, code, key);
 
 	if (!handle) {
 		var startFailed = emptyResult("run", false);
