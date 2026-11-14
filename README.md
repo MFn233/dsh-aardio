@@ -117,14 +117,14 @@ The plugin still **cannot run that test by itself** unless the bridge below is r
 Starting the bridge once turns verification into a tool call instead of a request for the user to press F5.
 
 1. Open `bridge/aardioBridge.aardio` in the aardio IDE (`aardio_open` can do it) and press **F5**.
-2. Leave the small window open. It stays idle until a request arrives; closing it stops the bridge.
+2. Leave the window open. It shows what the bridge is doing in real time — status, the current job and its code, `print` lines as they arrive, compile failures, and the result — and stays idle until a request arrives. Closing it stops the bridge.
 3. The agent can now call:
    - `aardio_exec({ code, mode: "check" })` — compile only, with line numbers;
    - `aardio_exec({ code })` or `aardio_exec({ path })` — run and return everything `print(...)` received, the `return` value (as JSON), `compileError`, and `error`;
    - `aardio_exec({ path, replace: { oldCode, newCode } })` — replace one unique snippet in memory before compiling. This is the GUI smoke-test pattern: swap `win.loopMessage();` for bounded test code without touching the source file;
    - `aardio_exec({ jobId })` — keep waiting for a run that outlived its timeout.
 
-How it works: two JSON files in `%TEMP%\dsh-aardio-bridge\`, a one-time token in `bridge.json`, and a nonce per request — no port, no firewall rule, no third-party library. The script mirrors the execution recipe aardio's own agent (AA / autos) uses in `lib\autos\tools\handlers.aardio`: `loadcode` to compile, a worker thread to run, `print` overridden to collect output, and `win.loopMessage()` replaced by a bounded wait so smoke tests cannot block forever.
+How it works: two JSON files in `%TEMP%\dsh-aardio-bridge\`, a one-time token in `bridge.json`, and a nonce per request — no port, no firewall rule, no third-party library. The window is a WebView2 page styled with the host's own dark palette (`rgb(21,21,23)` base, `rgb(35,35,36)` cards, `rgba(255,255,255,.08)` borders), falling back to a plain text window when WebView2 is missing. The script mirrors the execution recipe aardio's own agent (AA / autos) uses in `lib\autos\tools\handlers.aardio`: `loadcode` to compile, a worker thread to run, `print` overridden to collect output, and `win.loopMessage()` replaced by a bounded wait so smoke tests cannot block forever.
 
 Boundaries worth knowing:
 

@@ -117,14 +117,14 @@ aardio 自带 `util.testRunner` —— 一个专为 Agent 设计的 Jest/PyTest 
 桥接只要启动一次，验证就从「请用户按 F5」变成一次工具调用。
 
 1. 在 aardio IDE 里打开 `bridge/aardioBridge.aardio`（也可以让我用 `aardio_open` 打开），按 **F5**。
-2. 留着那个小窗口。没有请求时它一直空闲；关掉窗口就停止桥接。
+2. 留着那个窗口。它会实时显示桥接在干什么——状态、当前作业与代码、逐行到达的 `print`、编译失败、结果——没有请求时保持空闲；关掉窗口就停止。
 3. 之后模型可以直接调用：
    - `aardio_exec({ code, mode: "check" })`：只编译，报错带行号；
    - `aardio_exec({ code })` 或 `aardio_exec({ path })`：执行并回传 `print(...)` 的全部输出、`return` 值（JSON）、`compileError` 与 `error`；
    - `aardio_exec({ path, replace: { oldCode, newCode } })`：编译前在内存里替换一处唯一片段。GUI 冒烟的标准手法：把 `win.loopMessage();` 换成有限测试代码，源文件不动；
    - `aardio_exec({ jobId })`：继续等待超时前没跑完的作业。
 
-实现方式：`%TEMP%\dsh-aardio-bridge\` 下两个 JSON 文件 + `bridge.json` 里的一次性 token + 每个请求的 nonce —— 不开端口、不加防火墙规则、不装第三方库。执行逻辑照抄 aardio 自带 Agent（AA / autos）在 `lib\autos\tools\handlers.aardio` 里的做法：`loadcode` 编译、工作线程执行、覆盖 `print` 收集输出、把 `win.loopMessage()` 换成有限等待（冒烟测试不会永久阻塞）。
+实现方式：`%TEMP%\dsh-aardio-bridge\` 下两个 JSON 文件 + `bridge.json` 里的一次性 token + 每个请求的 nonce —— 不开端口、不加防火墙规则、不装第三方库。窗口是 WebView2 页面，配色照搬宿主自己的深色主题（底色 `rgb(21,21,23)`、卡片 `rgb(35,35,36)`、描边 `rgba(255,255,255,.08)`）；没有 WebView2 时自动退回纯文本窗口。执行逻辑照抄 aardio 自带 Agent（AA / autos）在 `lib\autos\tools\handlers.aardio` 里的做法：`loadcode` 编译、工作线程执行、覆盖 `print` 收集输出、把 `win.loopMessage()` 换成有限等待（冒烟测试不会永久阻塞）。
 
 需要知道的边界：
 

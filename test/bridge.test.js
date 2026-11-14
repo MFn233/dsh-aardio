@@ -349,7 +349,11 @@ describe('aardio_exec tool', () => {
 
 	it('reads a file with path and renders a compile failure', async () => {
 		await writeHandshake()
-		const stop = startFakeBridge(() => ({ ok: false, phase: 'compile', compileError: '第 7 行：缺少右括号' }))
+		let seen
+		const stop = startFakeBridge((request) => {
+			seen = request
+			return { ok: false, phase: 'compile', compileError: '第 7 行：缺少右括号' }
+		})
 		const source = join(directory, 'sample.aardio')
 		try {
 			await writeFile(source, 'var a = 1')
@@ -357,6 +361,8 @@ describe('aardio_exec tool', () => {
 			const value = await tool.execute({ path: source })
 			assert.equal(value.source, source)
 			assert.equal(value.ok, false)
+			// The bridge UI shows where a request came from.
+			assert.equal(seen.source, source)
 			const text = tool.output.render({}, value)[0].text
 			assert.match(text, /Compile error/u)
 			assert.match(text, /第 7 行/u)

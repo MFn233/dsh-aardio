@@ -5,19 +5,19 @@
 //   2. 执行代码：在独立线程里运行，捕获 print 输出、return 返回值与运行时错误；
 //   3. 把结果写成 JSON，交给 DSH 侧的 aardio_exec 工具。
 //
+//窗口用 WebView2 渲染，配色取自 DSH 深色主题（bg rgb(21,21,23)、卡片 rgb(35,35,36)、
+//描边 rgba(255,255,255,.08)），并把「当前在干什么」实时显示出来：状态、作业、代码、
+//print 流、编译/失败事件。WebView2 不可用时自动退回纯文本窗口。
+//
 //为什么必须在 IDE 里跑：载入代码的 loadcode/loadcodex 只存在于 aardio 进程内，
 //aardio.exe 也没有无头命令行入口。执行方式参照 aardio 自带 autos 的
-//executeCodeSync（lib\autos\tools\handlers.aardio），包括三处关键处理：
-//   - 覆盖 print，收集输出；
-//   - 把 win.loopMessage 变成有限等待，避免冒烟测试无限阻塞；
-//   - 在独立线程里跑，线程函数有独立的全局变量环境。
+//executeCodeSync（lib\autos\tools\handlers.aardio）。
 //
 //关于「超时」：aardio 没有安全的线程终止手段（TerminateThread 会破坏运行时），
 //所以这里不让 UI 线程死等，而是：
 //   - 请求开始后最多等 REPLY_WAIT_MS 就回 pending（带 jobId），作业继续跑；
 //   - 之后每次 poll 请求再等 REPLY_WAIT_MS；
 //   - 结果留在内存里，直到被取走或超过 JOB_KEEP_MS。
-//这样死循环不会阻塞桥接窗口，DSH 侧可以放弃等待或继续轮询，由用户在 IDE 里停止。
 //
 //不要尝试把它发布成 EXE：它依赖 IDE 进程内的 loadcode。
 
@@ -44,17 +44,231 @@ var JOB_KEEP_MS = 300000;
 var token = string.format("%08x%08x", math.random(0x7FFFFFFF), time.tick());
 var startedAt = time.tick();
 
-var winform = win.form(text="dsh-aardio bridge — 等待请求…"; right=520; bottom=132);
+//页面：DSH 深色配色 + 活动流。注意这是原样字符串，里面不能出现反引号。
+var PAGE = `<!DOCTYPE html>
+<html lang="zh"><head><meta charset="utf-8"><style>
+:root{
+  --bg: rgb(21,21,23); --l1: rgb(35,35,36); --l2: rgb(44,44,46); --l3: rgb(53,54,56);
+  --fg: rgb(249,250,251); --fg2: rgb(207,211,214); --fg3: rgb(173,178,184);
+  --border: rgba(255,255,255,.08); --border2: rgba(255,255,255,.14);
+  --ok: rgb(34,197,94); --err: rgb(242,90,90); --warn: rgb(234,179,8);
+  --radius: 10px;
+}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{margin:0;background:var(--bg);color:var(--fg);
+  font:13px/1.55 -apple-system,"Segoe UI","Microsoft YaHei",sans-serif;
+  display:flex;flex-direction:column;overflow:hidden;user-select:none}
+header{display:flex;align-items:center;gap:10px;padding:16px 20px 10px}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--fg3);flex:none}
+.dot.running{background:var(--ok);box-shadow:0 0 0 4px rgba(34,197,94,.16)}
+h1{font-size:14px;font-weight:600;margin:0;letter-spacing:.2px}
+.sub{color:var(--fg3);font-size:12px;margin-top:1px}
+.spacer{flex:1}
+.pill{font:11px ui-monospace,Consolas,monospace;color:var(--fg2);
+  border:1px solid var(--border);border-radius:999px;padding:2px 9px}
+main{padding:0 20px 14px;display:flex;flex-direction:column;gap:12px;flex:1;min-height:0}
+.card{background:var(--l1);border:1px solid var(--border);border-radius:var(--radius);padding:13px 15px}
+.row{display:flex;align-items:baseline;gap:10px}
+.status{font-size:15px;font-weight:600}
+.elapsed{font:12px ui-monospace,Consolas,monospace;color:var(--fg2)}
+.meta{display:flex;gap:16px;color:var(--fg3);font-size:12px;margin-top:5px;flex-wrap:wrap}
+pre.code{margin:9px 0 0;background:var(--l2);border:1px solid var(--border);border-radius:8px;
+  padding:10px 12px;max-height:118px;overflow:auto;color:var(--fg2);
+  font:12px/1.5 ui-monospace,Consolas,monospace;white-space:pre-wrap;user-select:text}
+.logCard{flex:1;min-height:0;display:flex;flex-direction:column}
+.logHead{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}
+.logHead strong{font-size:12px;font-weight:600;color:var(--fg2)}
+.log{overflow:auto;flex:1;display:flex;flex-direction:column;gap:5px;
+  font:12px/1.5 ui-monospace,Consolas,monospace;user-select:text}
+.entry{display:flex;gap:12px;color:var(--fg2)}
+.entry .t{color:var(--fg3);flex:none}
+.entry.print{color:var(--fg)}
+.entry.ok{color:var(--ok)}
+.entry.error{color:var(--err)}
+.entry.warn{color:var(--warn)}
+footer{padding:0 20px 14px;color:var(--fg3);font-size:11px;display:flex;gap:14px;justify-content:space-between}
+button{font:11px inherit;color:var(--fg);background:var(--l2);border:1px solid var(--border2);
+  border-radius:999px;padding:3px 10px;cursor:pointer;user-select:none}
+button:hover{background:var(--l3)}
+</style></head>
+<body>
+<header>
+  <span class="dot" id="dot"></span>
+  <div><h1>dsh-aardio bridge</h1><div class="sub" id="sub">等待 DSH 的 aardio_exec 请求</div></div>
+  <div class="spacer"></div>
+  <span class="pill" id="pid">pid —</span>
+</header>
+<main>
+  <section class="card">
+    <div class="row"><span class="status" id="status">空闲</span><span class="elapsed" id="elapsed"></span></div>
+    <div class="meta"><span id="job">无作业</span><span id="source">—</span><span id="mode">—</span></div>
+    <pre class="code" id="code">（还没有请求）</pre>
+  </section>
+  <section class="card logCard">
+    <div class="logHead"><strong>活动</strong><button onclick="clearLog()">清空</button></div>
+    <div class="log" id="log"></div>
+  </section>
+</main>
+<footer><span>关掉这个窗口即停止桥接</span><span id="dir"></span></footer>
+<script>
+(function(){
+  var state = {status:'idle', elapsedMs:0};
+  var startedAt = 0;
+  var dot = document.getElementById('dot');
+  var statusEl = document.getElementById('status');
+  var elapsedEl = document.getElementById('elapsed');
+  var jobEl = document.getElementById('job');
+  var sourceEl = document.getElementById('source');
+  var modeEl = document.getElementById('mode');
+  var codeEl = document.getElementById('code');
+  var logEl = document.getElementById('log');
+  var pidEl = document.getElementById('pid');
+  var dirEl = document.getElementById('dir');
+  var subEl = document.getElementById('sub');
+
+  function fmt(ms){
+    var s = ms / 1000;
+    return s < 10 ? s.toFixed(1) + 's' : Math.round(s) + 's';
+  }
+  function tick(){
+    if (state.status === 'running' && startedAt) {
+      elapsedEl.textContent = fmt(Date.now() - startedAt);
+    } else {
+      elapsedEl.textContent = '';
+    }
+  }
+  window.setHeader = function(pid, dir){
+    pidEl.textContent = 'pid ' + pid;
+    dirEl.textContent = dir;
+  };
+  window.applyState = function(s){
+    state = s || {status:'idle'};
+    if (state.status === 'running') {
+      startedAt = Date.now() - (state.elapsedMs || 0);
+      subEl.textContent = '正在 IDE 里运行 DSH 提交的代码';
+    } else if (state.status === 'compiling') {
+      startedAt = 0;
+      subEl.textContent = '正在编译 DSH 提交的代码';
+    } else {
+      startedAt = 0;
+      subEl.textContent = '等待 DSH 的 aardio_exec 请求';
+    }
+    dot.className = 'dot' + (state.status === 'running' ? ' running' : '');
+    statusEl.textContent = state.status === 'running' ? '运行中'
+      : (state.status === 'compiling' ? '编译中' : '空闲');
+    jobEl.textContent = state.jobId ? ('job ' + state.jobId) : '无作业';
+    sourceEl.textContent = state.source ? ('来源 ' + state.source) : '—';
+    modeEl.textContent = state.mode ? ('模式 ' + state.mode) : '—';
+    if (typeof state.code === 'string') codeEl.textContent = state.code || '（空）';
+    tick();
+  };
+  window.addLogs = function(list){
+    var auto = logEl.scrollTop + logEl.clientHeight >= logEl.scrollHeight - 30;
+    for (var i = 0; i < list.length; i++) {
+      var row = document.createElement('div');
+      row.className = 'entry ' + (list[i].kind || '');
+      var at = document.createElement('span');
+      at.className = 't';
+      at.textContent = list[i].at;
+      var text = document.createElement('span');
+      text.textContent = list[i].text;
+      row.appendChild(at);
+      row.appendChild(text);
+      logEl.appendChild(row);
+    }
+    while (logEl.children.length > 400) logEl.removeChild(logEl.firstChild);
+    if (auto) logEl.scrollTop = logEl.scrollHeight;
+  };
+  window.clearLog = function(){ logEl.innerHTML = ''; };
+  setInterval(tick, 200);
+})();
+</script>
+</body></html>`;
+
+var winform = win.form(text="dsh-aardio bridge"; right=720; bottom=560; bgcolor=0x171515);
 winform.add(
-	info={cls="static";text="桥接已启动。等待 DSH 的 aardio_exec 请求…";left=14;top=14;right=506;bottom=72;z=1};
-	tip={cls="static";text="关掉这个窗口即停止桥接（不会影响 IDE 里其它脚本）。";left=14;top=76;right=506;bottom=120;z=2}
+	fallback={cls="static";text="桥接已启动。等待 DSH 的 aardio_exec 请求…";left=20;top=20;right=700;bottom=510;z=1};
+	fallbackTip={cls="static";text="关掉这个窗口即停止桥接（不会影响 IDE 里其它脚本）。";left=20;top=516;right=700;bottom=540;z=2}
 );
 
-//当前作业：{ key; handle; nonce; deadline; startedAt; result; finishedAt }
+//WebView2 不可用时（缺少运行时）退回纯文本窗口，桥接功能不受影响。
+var wb;
+var webOk = call(function() {
+	import web.view;
+	wb = web.view(winform);
+	wb.html = PAGE;
+});
+
+var ui = function(expression) {
+	if (!wb) {
+		return;
+	}
+	call(function() {
+		wb.invoke(expression);
+	});
+};
+
+var logs = function(list) {
+	var entries = {};
+	var at = time.now().format("%H:%M:%S");
+	for (i = 1; #list) {
+		table.push(entries, {
+			at = at;
+			kind = list[i].kind;
+			text = string.left(tostring(list[i].text), 400);
+		});
+	}
+	ui("addLogs(" ++ JSON.stringify(entries) ++ ")");
+};
+
+var applyState = function(state) {
+	ui("applyState(" ++ JSON.stringify(state) ++ ")");
+};
+
+//纯文本回退窗口里的状态行。
+var fallbackText = function(text) {
+	if (!wb) {
+		winform.fallback.text = text;
+	}
+};
+
+var codePreview = function(code) {
+	var lines = string.split(code, '\n');
+	var total = #lines;
+	var text = "";
+	for (i = 1; total) {
+		if (i > 14) {
+			break;
+		}
+		text ++= lines[i] ++ '\n';
+	}
+	if (#text > 2000) {
+		text = string.left(text, 2000) ++ "…";
+	}
+	if (total > 14) {
+		text = text ++ "… 共 " ++ total ++ " 行";
+	}
+	return text;
+};
+
+//当前作业：{ key; outKey; handle; nonce; deadline; startedAt; result; finishedAt; printed }
 var job = null;
 
-var status = function(text) {
-	winform.info.text = text;
+var cleanJob = function() {
+	if (!job) {
+		return;
+	}
+	if (job.key) {
+		thread.set(job.key, null);
+	}
+	if (job.outKey) {
+		thread.set(job.outKey ++ "#n", null);
+	}
+	if (job.handle) {
+		raw.closeHandle(job.handle);
+	}
+	job = null;
 };
 
 var respond = function(nonce, payload) {
@@ -116,50 +330,71 @@ var applyReplacements = function(code, list) {
 	return code;
 };
 
-var cleanJob = function() {
-	if (!job) {
-		return;
-	}
-	if (job.key) {
-		thread.set(job.key, null);
-	}
-	if (job.handle) {
-		raw.closeHandle(job.handle);
-	}
-	job = null;
+var requestSummary = function(request) {
+	var source = request.source ? request.source : "inline";
+	return tostring(request.mode) ++ " · " ++ source;
 };
 
-//启动一个后台作业；compile / check 直接在 UI 线程返回。
+//启动一个后台作业；compile / check 直接返回。
 var startJob = function(request) {
 	var nonce = request.nonce;
+	var summary = requestSummary(request);
+
+	logs({
+		{kind = "request"; text = "收到请求（" ++ summary ++ "）"};
+	});
+
 	var code, replaceErr = applyReplacements(request.code, request.replacements);
 	if (!code) {
 		var failed = emptyResult("compile", false);
 		failed.compileError = tostring(replaceErr);
 		respond(nonce, failed);
+		logs({ {kind = "error"; text = "内存替换失败：" ++ tostring(replaceErr)} });
+		applyState({status = "idle"; source = summary});
 		return;
 	}
 
-	var func, err = loadcode(code);
-	if (!func) {
+	if (request.replacements) {
+		logs({ {kind = "warn"; text = "已应用 1 处内存替换（源文件未改动）"} });
+	}
+
+	applyState({
+		status = "compiling";
+		source = summary;
+		mode = tostring(request.mode);
+		code = codePreview(code);
+	});
+
+	var checkFunc, err = loadcode(code);
+	if (!checkFunc) {
 		var compile = emptyResult("compile", false);
 		compile.compileError = tostring(err);
 		respond(nonce, compile);
+		logs({ {kind = "error"; text = "编译失败：" ++ string.left(tostring(err), 300)} });
+		applyState({status = "idle"; source = summary; mode = tostring(request.mode); code = codePreview(code)});
+		fallbackText("编译失败：" ++ tostring(err));
 		return;
 	}
 
+	logs({ {kind = "ok"; text = "编译通过"} });
+
 	if (request.mode == "check") {
 		respond(nonce, emptyResult("check", true));
+		logs({ {kind = "ok"; text = "check 模式：不执行"} });
+		applyState({status = "idle"; source = summary; mode = "check"; code = codePreview(code)});
+		fallbackText("已就绪，等待下一个请求…");
 		return;
 	}
 
 	var key = "(dsh-aardio:job:" ++ nonce ++ ")";
+	var outKey = "(dsh-aardio:out:" ++ nonce ++ ")";
 	thread.set(key, null);
+	thread.set(outKey ++ "#n", null);
 
 	//代码在线程内编译：loadcode 会把函数的全局作用域绑到调用它的线程，
 	//这样下面的 print / win.loopMessage 覆盖才会对它生效。
 	var handle = thread.create(
-		function(code, key) {
+		function(code, key, outKey) {
 			import JSON;
 			import win;
 
@@ -176,6 +411,8 @@ var startJob = function(request) {
 					line ++= tostring(args[i]);
 				}
 				..table.push(output, line);
+				..thread.set(outKey ++ "#" ++ #output, line);
+				..thread.set(outKey ++ "#n", #output);
 			};
 
 			//冒烟代码里如果写了 win.loopMessage()，在这里变成有限等待，不会永久阻塞。
@@ -232,28 +469,43 @@ var startJob = function(request) {
 				error = errorText;
 				print = output;
 			});
-		}, code, key);
+		}, code, key, outKey);
 
 	if (!handle) {
 		var startFailed = emptyResult("run", false);
 		startFailed.error = "无法创建执行线程";
 		respond(nonce, startFailed);
+		logs({ {kind = "error"; text = "无法创建执行线程"} });
+		applyState({status = "idle"; source = summary; code = codePreview(code)});
 		return;
 	}
 
 	job = {
 		key = key;
+		outKey = outKey;
 		handle = handle;
 		nonce = nonce;
 		deadline = time.tick() + REPLY_WAIT_MS;
 		startedAt = time.tick();
 		result = null;
 		finishedAt = null;
+		printed = 0;
+		source = summary;
+		mode = tostring(request.mode);
+		code = codePreview(code);
 	};
-	status("运行中…（超过 " ++ (REPLY_WAIT_MS / 1000) ++ " 秒可继续轮询，关窗即停止）");
+
+	logs({ {kind = "run"; text = "开始执行（" ++ summary ++ "）"} });
+	applyState({
+		status = "running";
+		source = summary;
+		mode = tostring(request.mode);
+		jobId = string.right(key, 8);
+		code = codePreview(code);
+	});
+	fallbackText("运行中… 关掉窗口即停止。");
 };
 
-//把作业结果变成响应负载。
 var jobPayload = function(result, elapsed) {
 	var payload = emptyResult("run", result.ok === true);
 	payload.error = result.error;
@@ -262,6 +514,27 @@ var jobPayload = function(result, elapsed) {
 	payload.print = result.print;
 	payload.durationMs = elapsed;
 	return payload;
+};
+
+//把工作线程已经产生的 print 行搬进活动流。
+var flushPrint = function() {
+	if (!job || !job.outKey) {
+		return;
+	}
+	var count = thread.get(job.outKey ++ "#n");
+	if (!count) {
+		return;
+	}
+	if (count <= job.printed) {
+		return;
+	}
+	var fresh = {};
+	for (i = job.printed + 1; count) {
+		var line = thread.get(job.outKey ++ "#" ++ i);
+		table.push(fresh, {kind = "print"; text = "  " ++ tostring(line)});
+	}
+	job.printed = count;
+	logs(fresh);
 };
 
 var poll = function() {
@@ -278,6 +551,7 @@ var poll = function() {
 						if (request.jobId == job.key) {
 							job.nonce = request.nonce;
 							job.deadline = time.tick() + REPLY_WAIT_MS;
+							logs({ {kind = "warn"; text = "DSH 继续轮询（作业仍在跑）"} });
 						} else {
 							var other = emptyResult("run", false);
 							other.error = "当前作业不是 " ++ tostring(request.jobId);
@@ -295,6 +569,7 @@ var poll = function() {
 					busy.jobId = job.key;
 					busy.error = "桥接正忙，请用 aardio_exec({jobId}) 继续等待";
 					respond(request.nonce, busy);
+					logs({ {kind = "warn"; text = "收到新请求，但桥接正忙"} });
 				} elseif (!request.code) {
 					var missing = emptyResult("run", false);
 					missing.error = "请求缺少 code";
@@ -310,6 +585,8 @@ var poll = function() {
 		return;
 	}
 
+	flushPrint();
+
 	if (!job.result) {
 		job.result = thread.get(job.key);
 		if (job.result) {
@@ -320,12 +597,30 @@ var poll = function() {
 	if (job.result) {
 		//结果没被取走就保留一段时间，方便 DSH 侧超时后继续轮询。
 		if (job.nonce) {
-			respond(job.nonce, jobPayload(job.result, job.finishedAt - job.startedAt));
+			var elapsed = job.finishedAt - job.startedAt;
+			flushPrint();
+			respond(job.nonce, jobPayload(job.result, elapsed));
+			var kind = "ok";
+			var text = "完成（" ++ elapsed ++ " ms）";
+			if (!job.result.ok) {
+				kind = "error";
+				text = "运行失败（" ++ elapsed ++ " ms）";
+			}
+			if (job.result.ok && job.result.valueType == "table") {
+				text = text ++ " · 返回 table";
+			}
+			logs({ {kind = kind; text = text} });
+			applyState({
+				status = "idle";
+				source = job.source;
+				mode = job.mode;
+				code = job.code;
+			});
+			fallbackText("已就绪，等待下一个请求…");
 			cleanJob();
-			status("空闲。关掉窗口即停止。");
 		} elseif (time.tick() - job.finishedAt > JOB_KEEP_MS) {
+			logs({ {kind = "warn"; text = "上一次结果长时间无人取走，已丢弃"} });
 			cleanJob();
-			status("空闲（上一次结果已过期丢弃）。");
 		}
 		return;
 	}
@@ -337,7 +632,7 @@ var poll = function() {
 		pending.durationMs = time.tick() - job.startedAt;
 		respond(job.nonce, pending);
 		job.nonce = null;
-		status("运行中…（等待 DSH 继续轮询）");
+		logs({ {kind = "warn"; text = "超过 " ++ (REPLY_WAIT_MS / 1000) ++ " 秒仍未结束，回 pending；作业继续运行"} });
 	}
 };
 
@@ -347,7 +642,19 @@ JSON.save(infoPath, {
 	pid = ::Kernel32.GetCurrentProcessId();
 	startedAt = startedAt;
 	dir = dir;
+	hwnd = winform.hwnd;
 });
+
+if (webOk && wb) {
+	ui("setHeader(" ++ JSON.stringify(::Kernel32.GetCurrentProcessId()) ++ "," ++ JSON.stringify(dir) ++ ")");
+	ui('applyState({status:"idle"})');
+	logs({
+		{kind = "ok"; text = "桥接已启动，等待 DSH 的 aardio_exec 请求"};
+		{kind = "print"; text = "请求目录：" ++ dir};
+	});
+} else {
+	fallbackText("桥接已启动（WebView2 不可用，使用文本窗口）。" ++ '\r\n' ++ "请求目录：" ++ dir);
+}
 
 winform.show();
 winform.setInterval(poll, 150);
