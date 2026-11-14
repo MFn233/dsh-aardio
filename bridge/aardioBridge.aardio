@@ -768,7 +768,9 @@ var poll = function() {
 				} elseif (job) {
 					//已结束但没人取走的结果可以被新请求顶掉，避免桥接空占五分钟。
 					if (!job.nonce && job.result) {
-						logs({ {kind = "warn"; text = "上一个结果无人取走，丢弃并接受新请求"} });
+						if (!job.delivered) {
+							logs({ {kind = "warn"; text = "上一个结果无人取走，丢弃并接受新请求"} });
+						}
 						cleanJob();
 						startJob(request);
 					} else {
@@ -805,7 +807,7 @@ var poll = function() {
 	}
 
 	if (job.result) {
-		//结果没被取走就保留一段时间，方便 DSH 侧超时后继续轮询。
+		//结果保留一段时间：调用方可能刚超时，迟到的 jobId 还能再取一次。
 		if (job.nonce) {
 			var elapsed = job.finishedAt - job.startedAt;
 			flushPrint();
@@ -827,7 +829,9 @@ var poll = function() {
 				code = job.code;
 			});
 			fallbackText("已就绪，等待下一个请求…");
-			cleanJob();
+			job.nonce = null;
+			job.reply = null;
+			job.delivered = true;
 		} elseif (time.tick() - job.finishedAt > JOB_KEEP_MS) {
 			logs({ {kind = "warn"; text = "上一次结果长时间无人取走，已丢弃"} });
 			cleanJob();
