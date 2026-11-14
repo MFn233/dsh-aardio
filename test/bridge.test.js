@@ -299,6 +299,29 @@ describe('aardio_exec tool', () => {
 		}
 	})
 
+	it('renders aardio error placeholders as readable lines', () => {
+		const tool = defineExecTool({ bridgeScript: BRIDGE_SCRIPT })
+		const value = {
+			ok: false,
+			mode: 'run',
+			phase: 'run',
+			source: 'inline',
+			compileError: '{File}:(loadcode)\n{Line}:#2\n{Error}:<unexpected symbol>',
+			error: '\n{File}:(loadcode)\n{Line}:#2\n{Error}:boom',
+			result: '',
+			resultType: 'null',
+			print: ['before error'],
+			durationMs: 9,
+			bridgePid: 1,
+		}
+		const text = tool.output.render({}, value)[0].text
+		assert.match(text, /runtime error:\nline 2\nboom/u)
+		assert.equal(text.includes('{Line}'), false)
+		assert.equal(text.includes('{Error}'), false)
+		const compile = tool.output.render({}, { ...value, phase: 'compile' })[0].text
+		assert.match(compile, /Compile error in inline:\nline 2\n<unexpected symbol>/u)
+	})
+
 	it('renders a check result without a run summary', async () => {
 		await writeHandshake()
 		const stop = startFakeBridge(() => ({ ok: true, phase: 'check' }))
