@@ -1,0 +1,16 @@
+# dsh-aardio —— DSH bundle patch
+#
+# Inserts one Host plugin row. The plugin bundles three aardio skills, three
+# tools, and its own configuration page, so this row needs no config here:
+#   - the aardio folder is a setting (Plugins -> Aardio toolchain -> the
+#     dsh-aardio row -> Configure),
+#   - auto-detection and AARDIO_ROOT cover the common cases out of the box.
+#
+# Install (local checkout):
+#   dsh plugin --profile desktop add link:D:\path\to\dsh-aardio
+# Remove:
+#   dsh plugin --profile desktop remove dsh-aardio
+
+- insert:
+    - id: dsh-aardio
+      name: dsh-aardio

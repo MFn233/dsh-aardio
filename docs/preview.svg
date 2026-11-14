@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="640" height="300" viewBox="0 0 640 300" role="img" aria-label="An aardio installation folder, a documentation search, and the aardio editor window">
+  <g fill="none" stroke="#3B76D8" stroke-width="3" stroke-linejoin="round" stroke-linecap="round">
+    <path d="M56 100h64a8 8 0 0 1 6 3l10 13h84a8 8 0 0 1 8 8v88a8 8 0 0 1-8 8H56a8 8 0 0 1-8-8v-104a8 8 0 0 1 8-8z"/>
+    <rect x="384" y="92" width="216" height="132" rx="10"/>
+    <path d="M384 126h216"/>
+  </g>
+  <g stroke="#8FA2BC" stroke-width="5" stroke-linecap="round">
+    <path d="M80 152h96M80 174h72M80 196h88"/>
+  </g>
+  <g fill="#8FA2BC">
+    <circle cx="400" cy="109" r="4"/>
+    <circle cx="414" cy="109" r="4"/>
+    <circle cx="428" cy="109" r="4"/>
+  </g>
+  <g stroke="#8FA2BC" stroke-width="5" stroke-linecap="round">
+    <path d="M406 152h96M406 172h64M406 192h112"/>
+  </g>
+  <g fill="none" stroke="#3B76D8" stroke-width="4" stroke-linecap="round">
+    <rect x="238" y="106" width="76" height="92" rx="8"/>
+    <path d="M256 132h40M256 150h40M256 168h24"/>
+    <circle cx="306" cy="180" r="30" stroke-width="4"/>
+    <path d="M328 202l20 20" stroke-width="6"/>
+  </g>
+  <g fill="#3B76D8">
+    <rect x="406" y="212" width="56" height="5" rx="2.5"/>
+    <rect x="470" y="204" width="4" height="20" rx="2"/>
+  </g>
+</svg>

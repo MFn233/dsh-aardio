@@ -1,0 +1,7 @@
+{
+  "meta": {
+    "title": "aardio 工具链",
+    "description": "内置三个 aardio 编写技能，可就地检索你本机的官方文档、范例和标准库源码，把文件或工程交给 aardio IDE 打开。aardio 装在哪由你自己指定：在「插件」页打开本插件，进入 dsh-aardio 这一行点「配置」，选择含有 aardio.exe 的文件夹；留空则自动查找。",
+    "detail": "docs/DETAIL.zh.md"
+  }
+}

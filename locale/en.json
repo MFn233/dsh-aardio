@@ -1,0 +1,7 @@
+{
+  "meta": {
+    "title": "Aardio toolchain",
+    "description": "Write aardio code with three bundled skills, search your own aardio documentation, examples, and library sources, and open files or projects in the aardio IDE. You choose where aardio lives: open this bundle on the Plugins page, pick the dsh-aardio row, and choose Configure to point it at the folder that contains aardio.exe; leave it empty to detect the installation automatically.",
+    "detail": "docs/DETAIL.md"
+  }
+}
