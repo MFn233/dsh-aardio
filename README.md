@@ -124,12 +124,13 @@ Starting the bridge once turns verification into a tool call instead of a reques
    - `aardio_exec({ path, replace: { oldCode, newCode } })` — replace one unique snippet in memory before compiling. This is the GUI smoke-test pattern: swap `win.loopMessage();` for bounded test code without touching the source file;
    - `aardio_exec({ jobId })` — keep waiting for a run that outlived its timeout.
 
-How it works: two JSON files in `%TEMP%\dsh-aardio-bridge\`, a one-time token in `bridge.json`, and a nonce per request — no port, no firewall rule, no third-party library. The window is a WebView2 page styled with the host's own dark palette (`rgb(21,21,23)` base, `rgb(35,35,36)` cards, `rgba(255,255,255,.08)` borders), falling back to a plain text window when WebView2 is missing. The script mirrors the execution recipe aardio's own agent (AA / autos) uses in `lib\autos\tools\handlers.aardio`: `loadcode` to compile, a worker thread to run, `print` overridden to collect output, and `win.loopMessage()` replaced by a bounded wait so smoke tests cannot block forever.
+How it works: two JSON files in `%TEMP%\dsh-aardio-bridge\`, a one-time token in `bridge.json`, and a nonce per request — no port, no firewall rule, no third-party library. The window is a WebView2 page styled with the host's own dark palette (`rgb(21,21,23)` base, `rgb(35,35,36)` cards, `rgba(255,255,255,.08)` borders), falling back to a plain text window when WebView2 is missing. The script mirrors the execution recipe aardio's own agent (AA / autos) uses in `lib\autos\tools\handlers.aardio`: `loadcode` to compile, a worker thread to run, and `print` overridden to collect output.
 
 Boundaries worth knowing:
 
 - **The IDE runs the code, not DSH.** Trust and risk are the same as pressing F5 in the IDE; the bridge only serves requests written by this plugin's tool (token + nonce), but any code you ask the agent to run does execute there.
 - **One job at a time.** Requests are serialized by the plugin; default timeout 15 s, maximum 120 s.
+- **`win.loopMessage()` is not bounded.** Overriding it inside the worker does not reach code that imports `win` itself (measured), so a bare call keeps running until its window closes. The result then carries a `warning`, and GUI smoke tests should pass `replace` to swap that line for bounded steps.
 - **A timeout does not kill the code.** aardio has no safe thread termination, so the bridge keeps running and answers `pending` with a job id: the plugin re-polls until its own deadline, then names the job so `{ jobId }` can resume. If the code loops forever, stop it in the IDE.
 - **The bridge is optional.** Without it, `aardio_exec` explains how to start it, and everything else keeps working.
 

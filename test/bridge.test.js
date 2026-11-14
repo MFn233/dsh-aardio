@@ -429,6 +429,25 @@ describe('aardio_exec tool', () => {
 		}
 	})
 
+	it('warns when the code calls win.loopMessage without a replacement', async () => {
+		await writeHandshake()
+		const stop = startFakeBridge(() => ({ ok: true, result: 'closed' }))
+		try {
+			const tool = defineExecTool({ bridgeScript: BRIDGE_SCRIPT })
+			const value = await tool.execute({ code: 'win.loopMessage();' })
+			assert.match(value.warning, /blocks until that window closes/u)
+			assert.match(tool.output.render({}, value)[0].text, /note: The code calls win\.loopMessage/u)
+
+			const replaced = await tool.execute({
+				code: 'win.loopMessage();',
+				replace: { oldCode: 'win.loopMessage();', newCode: 'winform.close();' },
+			})
+			assert.equal(replaced.warning, '')
+		} finally {
+			stop()
+		}
+	})
+
 	it('resumes a pending job through jobId', async () => {
 		await writeHandshake()
 		const stop = startFakeBridge(() => ({ ok: true, result: 'job done', resultType: 'string' }))

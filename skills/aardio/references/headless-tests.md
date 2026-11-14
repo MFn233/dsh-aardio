@@ -109,7 +109,7 @@ var argb = bmp.getPixel(10, 10);
 $.expect(argb, 0xFFFF0000, "圆心被填充");
 ```
 
-GUI 冒烟——**不要写 `win.loopMessage()`**（会无限阻塞）。源文件保留它给用户运行，另外写一份冒烟副本把消息泵换成有限步骤：
+GUI 冒烟——**不要写 `win.loopMessage()`**（会一直阻塞到窗口关闭；桥接不会自动覆盖它）。源文件保留它给用户运行，另外写一份冒烟副本把消息泵换成有限步骤：
 
 ```aardio
 winform.show();
