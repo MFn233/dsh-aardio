@@ -120,7 +120,7 @@ button:hover{background:var(--l3)}
     <pre class="code" id="code">（还没有请求）</pre>
   </section>
   <section class="card logCard">
-    <div class="logHead"><strong>活动</strong><button onclick="clearLog()">清空</button></div>
+    <div class="logHead"><strong>活动</strong><button id="clearBtn" type="button">清空</button></div>
     <div class="log" id="log"></div>
   </section>
 </main>
@@ -194,7 +194,19 @@ button:hover{background:var(--l3)}
     while (logEl.children.length > 400) logEl.removeChild(logEl.firstChild);
     if (auto) logEl.scrollTop = logEl.scrollHeight;
   };
-  window.clearLog = function(){ logEl.innerHTML = ''; };
+  window.clearLog = function(){ logEl.innerHTML = ''; logEl.scrollTop = 0; };
+
+  //清空按钮：用事件监听而不是内联 onclick，并给出「已清空」反馈。
+  var clearBtn = document.getElementById('clearBtn');
+  clearBtn.addEventListener('click', function(){
+    logEl.innerHTML = '';
+    logEl.scrollTop = 0;
+    clearBtn.textContent = '已清空';
+    setTimeout(function(){ clearBtn.textContent = '清空'; }, 1200);
+  });
+
+  //无边框窗口第一次点击往往只激活窗口，这里主动把窗口提到前台，避免「点了没反应」。
+  document.addEventListener('mousedown', function(){ callHost('activate'); }, true);
 
   //自定义标题栏：拖动、双击最大化、三个按钮都交给 aardio 处理。
   //注意：web.view 占用了 window.external，导出的对象是 window.aardio。
@@ -279,6 +291,9 @@ saveWebState();
 if (wb) {
 	externalOk = call(function() {
 		wb.external = {
+			activate = function() {
+				win.setForeground(winform.hwnd);
+			};
 			drag = function() {
 				winform.hitCaption();
 			};
