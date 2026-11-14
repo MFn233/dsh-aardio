@@ -18,6 +18,13 @@ describe('prompt rules', () => {
 		assert.match(PROMPT_TEXT, /手动同步\/刷新/u)
 	})
 
+	it('prefers headless util.testRunner verification over screenshots', () => {
+		assert.match(PROMPT_TEXT, /util\.testRunner/u)
+		assert.match(PROMPT_TEXT, /\*\.test\.aardio/u)
+		assert.match(PROMPT_TEXT, /win\.loopMessage\(\)/u)
+		assert.match(PROMPT_TEXT, /截图识别/u)
+	})
+
 	it('points at the bundled skills for the full workflow', () => {
 		assert.match(PROMPT_TEXT, /aardio-project/u)
 		assert.match(PROMPT_TEXT, /aardio-library/u)

@@ -85,7 +85,9 @@ console.pause();
 3. 在用户工作区写 `.aardio` 文件。**不要**往 aardio 安装目录里写文件，那是只读安装目录。
    改过工程的 `dlg/` 或 `lib/` 之后，**提醒用户回 IDE 手动同步/刷新**（重开工程或重启 IDE），否则 IDE 缓存会让你和他看到的报错都来自旧版本。
 4. 自检一遍：引号、`null,err`、1-based、有没有写成 `obj.method()`、命名空间里少了 `..`。
-5. **如实说明无法自测**：DSH 没有 aardio 编译器，不能在本地编译或运行。请用户在 aardio IDE 里运行（F5），把报错原文和行号贴回来再修。不要声称"已测试通过"。
+5. **验证：写一份无头测试，而不是靠截图。** 用 aardio 自带的 `util.testRunner` 写 `xxx.test.aardio`（模板与 API 见本技能 `references/headless-tests.md`），`print(JSON.stringify($.report()))` 后让用户在 IDE 里 F5，把 JSON 或报错行号贴回来。纯逻辑、文件、算法、离屏像素都能这样验；GUI 冒烟用有限步骤，**不要写 `win.loopMessage()`**。
+   DSH 没有 aardio 编译器，确实不能自己跑；但不要就此停在"无法验证"——要么给可运行测试，要么明确说明哪部分只能由用户验证。
+6. 断言失败就修，然后让用户重跑同一份测试文件；不要每次换新用例，也不要凭外观猜测通过与否。
 
 ## 反模式
 

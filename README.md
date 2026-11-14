@@ -97,8 +97,19 @@ Beyond the skills, the plugin adds one short system-prompt section (`dsh-aardio:
 
 1. **Projects belong to the user.** The agent must not create or hand-write `default.aproj`; the user creates the project in the aardio IDE, and the agent only edits `main.aardio`, resources, and code.
 2. **`dlg/` and `lib/` changes need an IDE refresh.** After editing either, the agent must ask the user to reopen the project or restart the IDE, or the IDE keeps serving cached forms and libraries.
+3. **Verify headlessly.** The agent should write a `*.test.aardio` using aardio's own `util.testRunner` and ask the user to press F5, instead of reaching for screenshots or simulated input; GUI smoke tests must not enter `win.loopMessage()`.
 
 These rules are stated once, in one place, so they can be replaced or removed without touching the tools. The section is registered only when the deployment provides `ctx.systemPrompt`; a composition without it keeps working.
+
+## Headless verification
+
+aardio ships `util.testRunner` — a Jest/PyTest-style structured assertion engine built for agents — and its own agent (AA / autos) verifies with it rather than with screenshots. This plugin adopts the same workflow:
+
+- [skills/aardio/references/headless-tests.md](skills/aardio/references/headless-tests.md) holds the template, the full API (`test`, `expect`, `expectNear`, `contains`, `match`, `throws`, `notThrows`, `assert`, `fail`, `log`, `report`), and the patterns for pure logic, file I/O, offscreen `gdip` pixels, and GUI smoke tests.
+- The model writes `xxx.test.aardio` into your workspace; you press F5 in the IDE and paste back the JSON that `print(JSON.stringify($.report()))` produces.
+- Failures carry `file` and `line`, so the next attempt is a fix rather than a guess.
+
+The plugin still **cannot run that test by itself**: aardio has no headless command-line entry, and `loadcode`/`loadcodex` exist only inside an aardio process. Closing that gap needs a small bridge script running in your IDE, which is a separate, opt-in step.
 
 ## Bundled skills
 

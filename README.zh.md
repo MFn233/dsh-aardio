@@ -97,8 +97,19 @@ dsh plugin --profile desktop add link:D:\path\to\dsh-aardio
 
 1. **工程归用户。** 模型不得新建工程、也不得手写 `default.aproj`；工程由用户在 aardio IDE 里创建，模型只改 `main.aardio`、资源和代码。
 2. **改过 `dlg/` 或 `lib/` 要请用户刷新。** 之后必须提醒用户重开工程或重启 IDE，否则 IDE 会沿用缓存的窗体与库。
+3. **验证优先无头测试。** 用 aardio 自带的 `util.testRunner` 写 `*.test.aardio`，请用户 F5 后把 JSON 贴回；不要首选截图识别或模拟输入，GUI 冒烟不要进入 `win.loopMessage()`。
 
 规则只写在一处，方便日后整体替换或删除；部署里没有 `ctx.systemPrompt` 时这条规则不注册，插件其余功能照常。
+
+## 无头验证
+
+aardio 自带 `util.testRunner` —— 一个专为 Agent 设计的 Jest/PyTest 风格结构化断言引擎，aardio 自己的 Agent（AA / autos）就是用它来验证的，而不是靠截图。本插件沿用同一套流程：
+
+- [skills/aardio/references/headless-tests.md](skills/aardio/references/headless-tests.md) 里有模板、完整 API（`test`、`expect`、`expectNear`、`contains`、`match`、`throws`、`notThrows`、`assert`、`fail`、`log`、`report`），以及纯逻辑、文件读写、`gdip` 离屏像素、GUI 冒烟四种场景的写法。
+- 模型在你工作区写 `xxx.test.aardio`，你在 IDE 里按 F5，把 `print(JSON.stringify($.report()))` 打出的 JSON 贴回来。
+- 失败记录带 `file` 和 `line`，下一轮就是修，而不是猜。
+
+插件**仍然不能自己跑这份测试**：aardio 没有无头命令行入口，`loadcode`/`loadcodex` 只在 aardio 进程内可用。要补上这一环，需要一个跑在你 IDE 里的小桥接脚本 —— 那是独立的一步，需要你先手动启动它，再迭代调通。
 
 ## 内置技能的优先级
 

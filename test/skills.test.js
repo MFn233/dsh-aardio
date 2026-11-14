@@ -70,4 +70,13 @@ describe('bundled skill provider', () => {
 		const library = readFileSync(join(PLUGIN_ROOT, 'skills', 'aardio-library', 'SKILL.md'), 'utf8')
 		assert.match(library, /重开工程或重启 IDE/u)
 	})
+
+	it('ships the headless-test guide the skill points at', () => {
+		const code = readFileSync(join(PLUGIN_ROOT, 'skills', 'aardio', 'SKILL.md'), 'utf8')
+		assert.match(code, /references\/headless-tests\.md/u)
+		const guide = readFileSync(join(PLUGIN_ROOT, 'skills', 'aardio', 'references', 'headless-tests.md'), 'utf8')
+		for (const needle of ['util.testRunner', '$.report()', 'win.loopMessage()', 'console.test', 'gdip']) {
+			assert.equal(guide.includes(needle), true, `headless-tests.md should cover ${needle}`)
+		}
+	})
 })
