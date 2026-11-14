@@ -58,8 +58,8 @@ var PAGE = `<!DOCTYPE html>
 html,body{height:100%;overflow:hidden}
 body{margin:0;background:var(--bg);color:var(--fg);
   font:13px/1.55 -apple-system,"Segoe UI","Microsoft YaHei",sans-serif;
-  display:flex;flex-direction:column;overflow:hidden;user-select:none;height:100vh}
-header{display:flex;align-items:center;gap:10px;padding:16px 20px 10px;flex:none}
+  display:flex;flex-direction:column;overflow:hidden;user-select:text;height:100vh}
+header{display:flex;align-items:center;gap:10px;padding:16px 20px 10px;flex:none;user-select:none}
 .dot{width:8px;height:8px;border-radius:50%;background:var(--fg3);flex:none}
 .dot.running{background:var(--ok);box-shadow:0 0 0 4px rgba(34,197,94,.16)}
 h1{font-size:14px;font-weight:600;margin:0;letter-spacing:.2px}
@@ -258,7 +258,7 @@ var webError = "";
 var htmlError = "";
 var pageReady = false;
 var externalOk = false;
-var shadowOk = false;
+var resizeOk = false;
 var roundOk = false;
 var webStatePath = dir ++ "web-state.json";
 
@@ -269,7 +269,7 @@ var saveWebState = function() {
 		createError = webError;
 		htmlError = htmlError;
 		externalOk = externalOk;
-		shadowOk = shadowOk;
+		resizeOk = resizeOk;
 		roundOk = roundOk;
 	});
 };
@@ -286,7 +286,7 @@ if (callOk !== true) {
 }
 saveWebState();
 
-//有 WebView 时：无边框 + 阴影/可拖拽边框，标题栏由页面实现；
+//有 WebView 时：无边框 + WM_NCHITTEST 拖动边框，标题栏由页面实现；
 //没有 WebView 时：用 simpleWindow 补一个原生标题栏，至少还能拖动和关闭。
 if (wb) {
 	externalOk = call(function() {
@@ -309,9 +309,11 @@ if (wb) {
 		};
 	}) === true;
 
-	shadowOk = call(function() {
-		import win.ui.shadow;
-		win.ui.shadow(winform);
+	//可拖动边框：用 resizeBorder 的 WM_NCHITTEST 实现，不额外创建覆盖窗口，
+	//避免任何覆盖层挡住 WebView 的鼠标输入（win.ui.shadow 会建一个前置弹窗）。
+	resizeOk = call(function() {
+		import win.ui.resizeBorder;
+		win.ui.resizeBorder(winform, 8);
 	}) === true;
 
 	//圆角窗口 + 最小尺寸（round 内部会调用 win.ui.minmax）。
@@ -802,6 +804,10 @@ JSON.save(infoPath, {
 //页面就绪后才写页面内容；未就绪时用纯文本窗口说明原因。
 var initUi = function() {
 	if (!wb || !pageReady) {
+		//回退模式才显示纯文本控件。
+		winform.fallback.visible = true;
+		winform.fallbackTip.visible = true;
+
 		var reason = webError;
 		if (reason === "" && htmlError !== "") {
 			reason = "页面加载失败：" ++ htmlError;
@@ -815,6 +821,11 @@ var initUi = function() {
 			++ '\r\n' ++ "桥接功能正常，DSH 仍可调用 aardio_exec。");
 		return;
 	}
+
+	//关键：这两个 static 覆盖在 WebView 之上，会把真实鼠标点击全部吃掉
+	//（WS_EX_TRANSPARENT 只影响绘制，不穿透命中测试），必须隐藏。
+	winform.fallback.visible = false;
+	winform.fallbackTip.visible = false;
 
 	ui("setHeader(" ++ JSON.stringify(::Kernel32.GetCurrentProcessId()) ++ "," ++ JSON.stringify(dir) ++ ")");
 	ui('applyState({status:"idle"})');
