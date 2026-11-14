@@ -31,6 +31,9 @@ import thread;
 var dir = io.fullpath(string.getenv("TEMP") ++ "\dsh-aardio-bridge\");
 io.createDir(dir);
 
+//界面上显示 %TEMP% 形式，截图或日志里不会带出用户名。
+var displayDir = `%TEMP%\dsh-aardio-bridge`;
+
 var infoPath = dir ++ "bridge.json";
 var requestPath = dir ++ "request.json";
 var responsePath = dir ++ "response.json";
@@ -876,7 +879,7 @@ var initUi = function() {
 		}
 		fallbackText("桥接已启动，但 WebView2 界面不可用，退回文本窗口。"
 			++ '\r\n' ++ "原因：" ++ string.left(reason, 300)
-			++ '\r\n' ++ "请求目录：" ++ dir
+			++ '\r\n' ++ "请求目录：" ++ displayDir
 			++ '\r\n' ++ "桥接功能正常，DSH 仍可调用 aardio_exec。");
 		return;
 	}
@@ -886,11 +889,11 @@ var initUi = function() {
 	winform.fallback.visible = false;
 	winform.fallbackTip.visible = false;
 
-	ui("setHeader(" ++ JSON.stringify(::Kernel32.GetCurrentProcessId()) ++ "," ++ JSON.stringify(dir) ++ ")");
+	ui("setHeader(" ++ JSON.stringify(::Kernel32.GetCurrentProcessId()) ++ "," ++ JSON.stringify(displayDir) ++ ")");
 	ui('applyState({status:"idle"})');
 	logs({
 		{kind = "ok"; text = "桥接已启动，等待 DSH 的 aardio_exec 请求"};
-		{kind = "print"; text = "请求目录：" ++ dir};
+		{kind = "print"; text = "请求目录：" ++ displayDir};
 	});
 };
 
