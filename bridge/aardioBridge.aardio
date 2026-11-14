@@ -1,0 +1,209 @@
+//dsh-aardio bridge —— 在 aardio IDE 里按 F5 启动，关掉窗口即停止。
+//
+//它做三件事：
+//   1. 编译检查：loadcode 编译代码，编译错误带行号；
+//   2. 执行代码：在独立线程里运行，捕获 print 输出、return 返回值与运行时错误；
+//   3. 把结果写成 JSON，交给 DSH 侧的 aardio_exec 工具。
+//
+//为什么必须在 IDE 里跑：载入代码的 loadcode/loadcodex 只存在于 aardio 进程内，
+//aardio.exe 也没有无头命令行入口。执行方式参照 aardio 自带 autos 的
+//executeCodeSync（lib\autos\tools\handlers.aardio），包括三处关键处理：
+//   - 覆盖 print，收集输出；
+//   - 把 win.loopMessage 变成有限等待，避免冒烟测试无限阻塞；
+//   - 在独立线程里跑，线程函数有独立的全局变量环境。
+//
+//不要尝试把它发布成 EXE：它依赖 IDE 进程内的 loadcode。
+
+import win.ui;
+import win;
+import io;
+import JSON;
+import thread;
+
+var dir = io.fullpath(string.getenv("TEMP") ++ "\dsh-aardio-bridge\");
+io.createDir(dir);
+
+var infoPath = dir ++ "bridge.json";
+var requestPath = dir ++ "request.json";
+var responsePath = dir ++ "response.json";
+
+//一次性 token：DSH 侧从 bridge.json 读取，双方都校验，避免误读其它请求。
+var token = string.format("%08x%08x", math.random(0x7FFFFFFF), time.tick());
+var startedAt = time.tick();
+
+var winform = win.form(text="dsh-aardio bridge — 等待请求…"; right=480; bottom=132);
+winform.add(
+	info={cls="static";text="桥接已启动。等待 DSH 的 aardio_exec 请求…";left=14;top=14;right=466;bottom=72;z=1};
+	tip={cls="static";text="关掉这个窗口即停止桥接（不会影响 IDE 里其它脚本）。";left=14;top=76;right=466;bottom=120;z=2}
+);
+
+//编译检查或执行；mode 为 "check" 时只编译不运行。
+var runCode = function(code, mode) {
+	var func, err = loadcode(code);
+	if (!func) {
+		return {
+			ok = false;
+			phase = "compile";
+			compileError = tostring(err);
+			error = "";
+			result = "";
+			resultType = "";
+			print = {};
+			durationMs = 0;
+		};
+	}
+
+	if (mode == "check") {
+		return {
+			ok = true;
+			phase = "check";
+			compileError = "";
+			error = "";
+			result = "";
+			resultType = "";
+			print = {};
+			durationMs = 0;
+		};
+	}
+
+	var before = time.tick();
+	var out, invokeErr = thread.invokeAndWait(function(func) {
+		import JSON;
+		import win;
+
+		_CONSOLE_NO_PAUSE = true;
+
+		var output = {};
+		..print = function(...) {
+			if (#output >= 200) {
+				return;
+			}
+			var args = [...];
+			var line = "";
+			for (i = 1; #args) {
+				line ++= tostring(args[i]);
+			}
+			..table.push(output, line);
+		};
+
+		//冒烟代码里如果写了 win.loopMessage()，在这里变成有限等待，不会永久阻塞。
+		..win.loopMessage = lambda() ..thread.delay(5000);
+
+		var ok, value, valueErr = call(func);
+
+		var okJson, json = call(function(v) {
+			return ..JSON.stringify(v);
+		}, null, value);
+
+		var text;
+		if (okJson) {
+			text = json;
+		} else {
+			text = tostring(value);
+		}
+
+		if (#text > 200000) {
+			text = ..string.left(text, 200000) ++ "…[已截断]";
+		}
+
+		var errorText = "";
+		if (valueErr) {
+			errorText = tostring(valueErr);
+		}
+
+		return {
+			ok = ok;
+			value = text;
+			valueType = tostring(type(value));
+			error = errorText;
+			print = output;
+		};
+	}, func);
+
+	var elapsed = time.tick() - before;
+	if (!out) {
+		return {
+			ok = false;
+			phase = "run";
+			compileError = "";
+			error = tostring(invokeErr);
+			result = "";
+			resultType = "";
+			print = {};
+			durationMs = elapsed;
+		};
+	}
+
+	return {
+		ok = (out.ok === true);
+		phase = "run";
+		compileError = "";
+		error = out.error;
+		result = out.value;
+		resultType = out.valueType;
+		print = out.print;
+		durationMs = elapsed;
+	};
+};
+
+var handled = 0;
+
+var poll = function() {
+	if (!io.exists(requestPath)) {
+		return;
+	}
+
+	var raw = string.load(requestPath);
+	io.remove(requestPath);
+	if (!raw) {
+		return;
+	}
+	if (!#raw) {
+		return;
+	}
+
+	var request = JSON.tryParse(raw);
+	if (!request) {
+		return;
+	}
+
+	if (request.token !== token) {
+		return;
+	}
+
+	var code = request.code;
+	if (!code) {
+		return;
+	}
+	if (!#code) {
+		return;
+	}
+
+	var result = runCode(code, request.mode);
+	result.token = token;
+	result.nonce = request.nonce;
+	if (!result.print) {
+		result.print = {};
+	}
+
+	JSON.save(responsePath, result);
+
+	handled++;
+	winform.info.text = "已处理 " ++ handled ++ " 次请求。关掉窗口即停止。";
+};
+
+JSON.save(infoPath, {
+	version = 1;
+	token = token;
+	pid = ::Kernel32.GetCurrentProcessId();
+	startedAt = startedAt;
+	dir = dir;
+});
+
+winform.show();
+winform.setInterval(poll, 150);
+win.loopMessage();
+
+io.remove(infoPath);
+io.remove(requestPath);
+io.remove(responsePath);

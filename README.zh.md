@@ -12,6 +12,7 @@
 | 技能 | `aardio-project` | `*.aproj` 工程结构、版本属性、发布设置与踩坑 |
 | 技能 | `aardio-library` | 用户库/扩展库：`intellisense`/`details` 注释块与文档目录规范 |
 | 工具 | `aardio_docs` | 安装目录的搜索引擎：多关键词、引号短语、排除词、排序 + 上下文，并能直接读安装目录里的任意文件 |
+| 工具 | `aardio_exec` | 通过可选的桥接，在你开着的 IDE 里编译或运行 aardio 代码，回传 `print` 输出、`return` 值与报错 |
 | 工具 | `aardio_open` | 用 aardio IDE 打开 `.aardio` 文件、`.aproj` 或工程目录 |
 | 工具 | `aardio_env` | 报告插件解析到的安装目录、来源，以及探测过的位置 |
 | 设置 | 配置页 | 选择包含 `aardio.exe` 的文件夹，可浏览选择，也可一键恢复自动探测 |
@@ -109,7 +110,26 @@ aardio 自带 `util.testRunner` —— 一个专为 Agent 设计的 Jest/PyTest 
 - 模型在你工作区写 `xxx.test.aardio`，你在 IDE 里按 F5，把 `print(JSON.stringify($.report()))` 打出的 JSON 贴回来。
 - 失败记录带 `file` 和 `line`，下一轮就是修，而不是猜。
 
-插件**仍然不能自己跑这份测试**：aardio 没有无头命令行入口，`loadcode`/`loadcodex` 只在 aardio 进程内可用。要补上这一环，需要一个跑在你 IDE 里的小桥接脚本 —— 那是独立的一步，需要你先手动启动它，再迭代调通。
+插件**不能自己跑这份测试**，除非下面的桥接开着：aardio 没有无头命令行入口，`loadcode`/`loadcodex` 只在 aardio 进程内可用。
+
+## IDE 桥接（`aardio_exec`）
+
+桥接只要启动一次，验证就从「请用户按 F5」变成一次工具调用。
+
+1. 在 aardio IDE 里打开 `bridge/aardioBridge.aardio`（也可以让我用 `aardio_open` 打开），按 **F5**。
+2. 留着那个小窗口。没有请求时它一直空闲；关掉窗口就停止桥接。
+3. 之后模型可以直接调用：
+   - `aardio_exec({ code, mode: "check" })`：只编译，报错带行号；
+   - `aardio_exec({ code })` 或 `aardio_exec({ path })`：执行并回传 `print(...)` 的全部输出、`return` 值（JSON）、`compileError` 与 `error`。
+
+实现方式：`%TEMP%\dsh-aardio-bridge\` 下两个 JSON 文件 + `bridge.json` 里的一次性 token + 每个请求的 nonce —— 不开端口、不加防火墙规则、不装第三方库。执行逻辑照抄 aardio 自带 Agent（AA / autos）在 `lib\autos\tools\handlers.aardio` 里的做法：`loadcode` 编译、`thread.invokeAndWait` 在独立线程执行、覆盖 `print` 收集输出、把 `win.loopMessage()` 换成有限等待（冒烟测试不会永久阻塞）。
+
+需要知道的边界：
+
+- **跑代码的是你的 IDE，不是 DSH。** 风险和你在 IDE 里按 F5 一样；桥接只接受本插件工具写的请求（token + nonce），但你让模型执行的代码确实会在那里运行。
+- **一次只处理一个请求**，插件侧串行；默认超时 15 秒，最大 120 秒。
+- **桥接是可选的。** 没启动时 `aardio_exec` 会告诉你怎么启动，其余功能不受影响。
+- **暂不支持 GUI 自动化。** v1 只做编译与执行；截图、模拟点击、消息泵留到下一步。
 
 ## 内置技能的优先级
 
@@ -119,7 +139,7 @@ aardio 自带 `util.testRunner` —— 一个专为 Agent 设计的 Jest/PyTest 
 
 ## 已知边界
 
-- **aardio 没有无头命令行入口。** `aardio.exe <脚本>` 只会打开 IDE，`/run`、`/build` 之类参数无效；`loadcode`/`loadcodex` 只在 aardio 进程内可用。所以本插件**不能编译、不能运行、不能发布**：写完代码请在 IDE 里按 <kbd>F5</kbd>。
+- **aardio 没有无头命令行入口。** `aardio.exe <脚本>` 只会打开 IDE，`/run`、`/build` 之类参数无效；`loadcode`/`loadcodex` 只在 aardio 进程内可用。桥接开着时，插件通过你的 IDE 编译和执行代码；没开时请在 IDE 里按 <kbd>F5</kbd>。
 - **IDE 只有 Windows 版**，因此 `aardio_open` 在其他平台会直接报错；检索和技能对任何平台的安装副本都可用。
 - **官方文档只读不随包分发。** `docs/index.md` 禁止单独分发 aardio 官方文档；本插件只带原创索引与摘要，检索读的是你本机的安装目录。
 
@@ -144,6 +164,8 @@ npm run pack:check
 | `lib/config.js` | Config schema 与 peer 解析 |
 | `lib/installation.js` | 路径规范化、探测、优先级、诊断 |
 | `lib/search.js` | 查询解析、排序与有界读取 |
+| `lib/bridge.js` | 桥接协议的 Node 侧 |
+| `bridge/aardioBridge.aardio` | 用户在 IDE 里 F5 启动的桥接脚本 |
 | `lib/prompt.js` | 常驻的工程协作规则 |
 | `lib/skills.js` | 技能 frontmatter 解析与 provider |
 | `lib/tools.js` | 三个工具定义 |

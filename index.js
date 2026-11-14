@@ -3,9 +3,12 @@
  *
  * Provides:
  *   - three bundled skills: `aardio`, `aardio-project`, `aardio-library`
- *   - `aardio_docs`: keyword search over the local docs, examples, and libraries
+ *   - `aardio_docs`: keyword search over the local docs, examples, and libraries,
+ *     plus a bounded read of any file inside the installation
+ *   - `aardio_exec`: compile or run code inside the user's IDE through a bridge
  *   - `aardio_open`: hand a file or project to the aardio IDE
  *   - `aardio_env`: report which installation was resolved and what was probed
+ *   - one system-prompt section with the project and verification rules
  *
  * The installation folder is a setting, not a constant: it comes from the row's
  * `aardioRoot`, then `AARDIO_ROOT`/`AARDIO_HOME`, then auto-detection. Users
@@ -24,7 +27,7 @@ import { createConfig, readRoot } from './lib/config.js'
 import { createInstallation } from './lib/installation.js'
 import { registerPromptSection } from './lib/prompt.js'
 import { createSkillProvider } from './lib/skills.js'
-import { defineDocsTool, defineEnvTool, defineOpenTool } from './lib/tools.js'
+import { defineDocsTool, defineEnvTool, defineExecTool, defineOpenTool } from './lib/tools.js'
 
 /** Cordis plugin name. */
 export const name = 'dsh-aardio'
@@ -56,6 +59,7 @@ export function apply(ctx, config = {}) {
 		ctx.tools.register(defineDocsTool(installation)),
 		ctx.tools.register(defineOpenTool(installation)),
 		ctx.tools.register(defineEnvTool(installation)),
+		ctx.tools.register(defineExecTool()),
 		ctx.skills.registerProvider(() => createSkillProvider({ pluginRoot: PLUGIN_ROOT })),
 	]
 

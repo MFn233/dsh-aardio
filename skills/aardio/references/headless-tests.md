@@ -1,6 +1,22 @@
 # 无头验证：让用户在 IDE 里跑一份结构化测试
 
-aardio 没有无头命令行入口，所以「验证」只能由用户在 IDE 里按 F5。但这不代表只能靠肉眼：aardio 自带一套专为 AI Agent 设计的断言引擎 `util.testRunner`（AA / autos 自己就用它），能把结论变成一段可粘贴的 JSON，而不是一张截图。
+aardio 没有无头命令行入口，所以「验证」只有两条路：**桥接开着就自己跑，没开就让用户在 IDE 里按 F5**。两条路都用 aardio 自带的 `util.testRunner`（AA / autos 自己就用它），把结论变成一段可粘贴的 JSON，而不是一张截图。
+
+## 路径一：桥接开着 → 自己跑
+
+用户启动过 `bridge/aardioBridge.aardio`（IDE 里 F5，窗口留着）时，直接调 `aardio_exec`：
+
+```text
+aardio_exec({ code: "import console; var a=1+1; print(a); return a;" })
+aardio_exec({ path: "/path/to/foo.test.aardio" })
+aardio_exec({ code: "var a = ", mode: "check" })   // 只编译，不执行
+```
+
+返回里有 `print`（收集到的输出行）、`result`（`return` 值的 JSON）、`compileError`/`error`。
+
+## 路径二：桥接没开 → 交给用户
+
+写一份 `xxx.test.aardio`，让用户 F5，把 JSON 贴回来。
 
 ## 为什么优先无头
 

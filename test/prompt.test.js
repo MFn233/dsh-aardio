@@ -20,6 +20,7 @@ describe('prompt rules', () => {
 
 	it('prefers headless util.testRunner verification over screenshots', () => {
 		assert.match(PROMPT_TEXT, /util\.testRunner/u)
+		assert.match(PROMPT_TEXT, /aardio_exec/u)
 		assert.match(PROMPT_TEXT, /\*\.test\.aardio/u)
 		assert.match(PROMPT_TEXT, /win\.loopMessage\(\)/u)
 		assert.match(PROMPT_TEXT, /截图识别/u)

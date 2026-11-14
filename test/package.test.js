@@ -30,9 +30,10 @@ describe('manifest', () => {
 	})
 
 	it('publishes every runtime file', () => {
-		for (const entry of ['index.js', 'client.js', 'cordis.patch.yml', 'lib', 'skills', 'locale/*.json', 'docs', 'icon.svg', 'LICENSE']) {
+		for (const entry of ['index.js', 'client.js', 'cordis.patch.yml', 'lib', 'bridge', 'skills', 'locale/*.json', 'docs', 'icon.svg', 'LICENSE']) {
 			assert.equal(manifest.files.includes(entry), true, `files is missing ${entry}`)
 		}
+		assert.equal(statSync(join(PLUGIN_ROOT, 'bridge', 'aardioBridge.aardio')).isFile(), true)
 	})
 
 	it('points at the public repository', () => {

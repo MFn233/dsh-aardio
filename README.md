@@ -12,6 +12,7 @@ English | [中文](README.zh.md) · [GitHub](https://github.com/MFn233/dsh-aardi
 | Skill | `aardio-project` | `*.aproj` project structure, version attributes, publish settings, and the traps around them |
 | Skill | `aardio-library` | User and extension libraries: `intellisense`/`details` blocks and the documentation layout |
 | Tool | `aardio_docs` | Search engine over `docs/`, `examples/`, and `lib/`: multi-term queries, phrases, exclusions, ranked hits with context, and a bounded read of any file inside the installation |
+| Tool | `aardio_exec` | Compile or run aardio code inside your running IDE through the optional bridge, returning `print` output, the `return` value, and errors |
 | Tool | `aardio_open` | Hand an `.aardio` file, an `.aproj`, or a project folder to the aardio IDE |
 | Tool | `aardio_env` | Report the resolved installation, where the value came from, and what was probed |
 | Setting | Config page | Choose the folder that contains `aardio.exe`, with a folder picker and an auto-detect reset |
@@ -109,7 +110,26 @@ aardio ships `util.testRunner` — a Jest/PyTest-style structured assertion engi
 - The model writes `xxx.test.aardio` into your workspace; you press F5 in the IDE and paste back the JSON that `print(JSON.stringify($.report()))` produces.
 - Failures carry `file` and `line`, so the next attempt is a fix rather than a guess.
 
-The plugin still **cannot run that test by itself**: aardio has no headless command-line entry, and `loadcode`/`loadcodex` exist only inside an aardio process. Closing that gap needs a small bridge script running in your IDE, which is a separate, opt-in step.
+The plugin still **cannot run that test by itself** unless the bridge below is running. aardio has no headless command-line entry, and `loadcode`/`loadcodex` exist only inside an aardio process.
+
+## The IDE bridge (`aardio_exec`)
+
+Starting the bridge once turns verification into a tool call instead of a request for the user to press F5.
+
+1. Open `bridge/aardioBridge.aardio` in the aardio IDE (`aardio_open` can do it) and press **F5**.
+2. Leave the small window open. It stays idle until a request arrives; closing it stops the bridge.
+3. The agent can now call:
+   - `aardio_exec({ code, mode: "check" })` — compile only, with line numbers;
+   - `aardio_exec({ code })` or `aardio_exec({ path })` — run and return everything `print(...)` received, the `return` value (as JSON), `compileError`, and `error`.
+
+How it works: two JSON files in `%TEMP%\dsh-aardio-bridge\`, a one-time token in `bridge.json`, and a nonce per request — no port, no firewall rule, no third-party library. The script mirrors the execution recipe aardio's own agent (AA / autos) uses in `lib\autos\tools\handlers.aardio`: `loadcode` to compile, `thread.invokeAndWait` to run in its own thread, `print` overridden to collect output, and `win.loopMessage()` replaced by a bounded wait so smoke tests cannot block forever.
+
+Boundaries worth knowing:
+
+- **The IDE runs the code, not DSH.** Trust and risk are the same as pressing F5 in the IDE; the bridge only serves requests written by this plugin's tool (token + nonce), but any code you ask the agent to run does execute there.
+- **One request at a time**, serialized by the plugin; default timeout 15 s, maximum 120 s.
+- **The bridge is optional.** Without it, `aardio_exec` explains how to start it, and everything else keeps working.
+- **No GUI automation yet.** v1 compiles and runs; driving windows, screenshots, and message pumps is a later step.
 
 ## Bundled skills
 
@@ -119,7 +139,7 @@ The skills deliberately contain no absolute installation path: they tell the mod
 
 ## Limits
 
-- **aardio has no headless command line.** `aardio.exe <script>` only opens the IDE; `/run`, `/build`, and friends do nothing. `loadcode`/`loadcodex` exist only inside an aardio process. This plugin therefore cannot compile, run, or publish your code — write it, open it in the IDE, and press <kbd>F5</kbd>.
+- **aardio has no headless command line.** `aardio.exe <script>` only opens the IDE; `/run`, `/build`, and friends do nothing. `loadcode`/`loadcodex` exist only inside an aardio process. With the bridge running, the plugin compiles and runs code through your IDE; without it, the user presses <kbd>F5</kbd>.
 - **The IDE is Windows-only**, so `aardio_open` refuses to run elsewhere. Search and skills still work against any copy of an installation.
 - **The documentation is read, never shipped.** `docs/index.md` forbids redistributing the official documentation; this package contains only original indexes and summaries, and reads your installation in place.
 
@@ -144,6 +164,8 @@ Tests are offline and create their fixtures in the OS temp directory.
 | `lib/config.js` | Config schema and its peer resolution |
 | `lib/installation.js` | Path normalisation, probing, precedence, diagnostics |
 | `lib/search.js` | Query parsing, ranking, and the bounded read |
+| `lib/bridge.js` | Node side of the IDE bridge protocol |
+| `bridge/aardioBridge.aardio` | The IDE-side script the user starts with F5 |
 | `lib/prompt.js` | The always-on project rules |
 | `lib/skills.js` | Skill frontmatter and the provider |
 | `lib/tools.js` | The three tool definitions |

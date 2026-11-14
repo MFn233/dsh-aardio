@@ -85,9 +85,12 @@ console.pause();
 3. 在用户工作区写 `.aardio` 文件。**不要**往 aardio 安装目录里写文件，那是只读安装目录。
    改过工程的 `dlg/` 或 `lib/` 之后，**提醒用户回 IDE 手动同步/刷新**（重开工程或重启 IDE），否则 IDE 缓存会让你和他看到的报错都来自旧版本。
 4. 自检一遍：引号、`null,err`、1-based、有没有写成 `obj.method()`、命名空间里少了 `..`。
-5. **验证：写一份无头测试，而不是靠截图。** 用 aardio 自带的 `util.testRunner` 写 `xxx.test.aardio`（模板与 API 见本技能 `references/headless-tests.md`），`print(JSON.stringify($.report()))` 后让用户在 IDE 里 F5，把 JSON 或报错行号贴回来。纯逻辑、文件、算法、离屏像素都能这样验；GUI 冒烟用有限步骤，**不要写 `win.loopMessage()`**。
-   DSH 没有 aardio 编译器，确实不能自己跑；但不要就此停在"无法验证"——要么给可运行测试，要么明确说明哪部分只能由用户验证。
-6. 断言失败就修，然后让用户重跑同一份测试文件；不要每次换新用例，也不要凭外观猜测通过与否。
+5. **验证：优先无头测试，而不是截图。**
+   - IDE 里开着 dsh-aardio bridge 时：直接用 `aardio_exec`（`mode:"check"` 只编译，默认执行并回传 `print`/`return`/报错），也可以把 `util.testRunner` 报告当返回值拿回来。
+   - 桥接没开时：写 `xxx.test.aardio`（模板与 API 见本技能 `references/headless-tests.md`），`print(JSON.stringify($.report()))` 后请用户按 F5，把 JSON 或报错行号贴回。
+   - 纯逻辑、文件、算法、离屏像素都能这样验；GUI 冒烟用有限步骤，**不要写 `win.loopMessage()`**。
+   DSH 没有 aardio 编译器；能自己跑就跑，跑不了再请用户按 F5，并说明哪部分只能由用户验证。
+6. 断言失败就修，然后重跑同一份测试；不要每次换新用例，也不要凭外观猜测通过与否。
 
 ## 反模式
 

@@ -10,7 +10,7 @@ import { fileURLToPath } from 'node:url'
 import { after, before, describe, it } from 'node:test'
 
 import { apply } from '../index.js'
-import { defineDocsTool, defineEnvTool, defineOpenTool } from '../lib/tools.js'
+import { defineDocsTool, defineEnvTool, defineExecTool, defineOpenTool } from '../lib/tools.js'
 
 const PLUGIN_ROOT = dirname(dirname(fileURLToPath(import.meta.url)))
 
@@ -75,10 +75,10 @@ function collectUnsupported(node, path, found) {
 
 describe('tool schemas', () => {
 	const installation = installationFor(PLUGIN_ROOT)
-	const tools = [defineDocsTool(installation), defineOpenTool(installation), defineEnvTool(installation)]
+	const tools = [defineDocsTool(installation), defineOpenTool(installation), defineEnvTool(installation), defineExecTool()]
 
-	it('exposes the three documented tool names', () => {
-		assert.deepEqual(tools.map((tool) => tool.name), ['aardio_docs', 'aardio_open', 'aardio_env'])
+	it('exposes the four documented tool names', () => {
+		assert.deepEqual(tools.map((tool) => tool.name), ['aardio_docs', 'aardio_open', 'aardio_env', 'aardio_exec'])
 	})
 
 	it('uses only schema keywords the tool layer accepts', () => {
@@ -213,7 +213,7 @@ describe('aardio_env', () => {
 })
 
 describe('apply', () => {
-	it('registers three tools, the bundled skill provider, and the prompt rules, then disposes all of them', async () => {
+	it('registers four tools, the bundled skill provider, and the prompt rules, then disposes all of them', async () => {
 		const registered = []
 		const sections = []
 		let disposed = 0
@@ -238,12 +238,12 @@ describe('apply', () => {
 		}
 
 		const dispose = apply(ctx, { aardioRoot: root })
-		assert.deepEqual(registered.map((tool) => tool.name), ['aardio_docs', 'aardio_open', 'aardio_env'])
+		assert.deepEqual(registered.map((tool) => tool.name), ['aardio_docs', 'aardio_open', 'aardio_env', 'aardio_exec'])
 		const skills = await provider.list()
 		assert.deepEqual(skills.map((skill) => skill.name), ['aardio', 'aardio-project', 'aardio-library'])
 		assert.equal(sections.length, 1)
 		dispose()
-		assert.equal(disposed, 5)
+		assert.equal(disposed, 6)
 	})
 
 	it('works without config when the row has none', () => {
