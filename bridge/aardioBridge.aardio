@@ -35,8 +35,25 @@ var infoPath = dir ++ "bridge.json";
 var requestPath = dir ++ "request.json";
 var responsePath = dir ++ "response.json";
 
-//每次请求最多占用 UI 线程的时间；到点就回 pending，作业在后台继续。
+//回 pending 前最多占用 UI 线程多久；调用方给了 timeoutMs 就提前到 timeout-300，
+//这样即使对方超时很短，也能在超时前拿到 jobId。
 var REPLY_WAIT_MS = 8000;
+var REPLY_WAIT_DEFAULT_MS = 2500;
+
+var replyWindow = function(request) {
+	var wait = REPLY_WAIT_DEFAULT_MS;
+	var limit = request ? tonumber(request.timeoutMs) : null;
+	if (limit && limit > 800) {
+		wait = limit - 300;
+	}
+	if (wait > REPLY_WAIT_MS) {
+		wait = REPLY_WAIT_MS;
+	}
+	if (wait < 500) {
+		wait = 500;
+	}
+	return wait;
+};
 
 //已完成但还没被取走的结果保留多久。
 var JOB_KEEP_MS = 300000;
@@ -644,7 +661,7 @@ var startJob = function(request) {
 		outKey = outKey;
 		handle = handle;
 		nonce = nonce;
-		deadline = time.tick() + REPLY_WAIT_MS;
+		deadline = time.tick() + replyWindow(request);
 		startedAt = time.tick();
 		result = null;
 		finishedAt = null;
@@ -736,7 +753,7 @@ var poll = function() {
 						if (request.jobId == job.key) {
 							job.nonce = request.nonce;
 							job.reply = replyPath;
-							job.deadline = time.tick() + REPLY_WAIT_MS;
+							job.deadline = time.tick() + replyWindow(request);
 							logs({ {kind = "warn"; text = "DSH 继续轮询（作业仍在跑）"} });
 						} else {
 							var other = emptyResult("run", false);
@@ -749,13 +766,20 @@ var poll = function() {
 						respond(request.nonce, gone);
 					}
 				} elseif (job) {
-					var busy = emptyResult("run", false);
-					busy.pending = true;
-					busy.busy = true;
-					busy.jobId = job.key;
-					busy.error = "桥接正忙，请用 aardio_exec({jobId}) 继续等待";
-					respond(request.nonce, busy);
-					logs({ {kind = "warn"; text = "收到新请求，但桥接正忙"} });
+					//已结束但没人取走的结果可以被新请求顶掉，避免桥接空占五分钟。
+					if (!job.nonce && job.result) {
+						logs({ {kind = "warn"; text = "上一个结果无人取走，丢弃并接受新请求"} });
+						cleanJob();
+						startJob(request);
+					} else {
+						var busy = emptyResult("run", false);
+						busy.pending = true;
+						busy.busy = true;
+						busy.jobId = job.key;
+						busy.error = "桥接正忙，请用 aardio_exec({jobId}) 继续等待";
+						respond(request.nonce, busy);
+						logs({ {kind = "warn"; text = "收到新请求，但桥接正忙"} });
+					}
 				} elseif (!request.code) {
 					var missing = emptyResult("run", false);
 					missing.error = "请求缺少 code";

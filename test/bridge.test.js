@@ -217,6 +217,8 @@ describe('runBridgeCode', () => {
 			const value = await runBridgeCode({ code: '1', timeoutMs: 4000 })
 			assert.equal(value.result, '1')
 			assert.match(seen.replyTo, /^response-\d+-[0-9a-f]{8}\.json$/u)
+			// The bridge shortens its pending window from this number.
+			assert.equal(seen.timeoutMs, 4000)
 		} finally {
 			stop()
 		}
