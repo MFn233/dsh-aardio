@@ -1,8 +1,8 @@
 # dsh-aardio
 
-The [aardio](https://aardio.com) toolchain for DeepSeek Harness: three bundled authoring skills, documentation search over your own aardio installation, open-in-IDE, and a settings page that points the plugin at the aardio folder on your machine.
+The [aardio](https://aardio.com) toolchain for DeepSeek Harness: three bundled authoring skills, a keyword search engine over your own aardio installation, always-on project rules, open-in-IDE, and a settings page that points the plugin at the aardio folder on your machine.
 
-English | [中文](README.zh.md)
+English | [中文](README.zh.md) · [GitHub](https://github.com/MFn233/dsh-aardio)
 
 ## What you get
 
@@ -11,10 +11,11 @@ English | [中文](README.zh.md)
 | Skill | `aardio` | Language rules, the local documentation map, and the working procedure for writing aardio code |
 | Skill | `aardio-project` | `*.aproj` project structure, version attributes, publish settings, and the traps around them |
 | Skill | `aardio-library` | User and extension libraries: `intellisense`/`details` blocks and the documentation layout |
-| Tool | `aardio_docs` | Keyword search over `docs/`, `examples/`, and `lib/` of your installation |
+| Tool | `aardio_docs` | Search engine over `docs/`, `examples/`, and `lib/`: multi-term queries, phrases, exclusions, ranked hits with context, and a bounded read of any file inside the installation |
 | Tool | `aardio_open` | Hand an `.aardio` file, an `.aproj`, or a project folder to the aardio IDE |
 | Tool | `aardio_env` | Report the resolved installation, where the value came from, and what was probed |
 | Setting | Config page | Choose the folder that contains `aardio.exe`, with a folder picker and an auto-detect reset |
+| Prompt rules | `dsh-aardio:project-rules` | Tells the model that projects belong to the user and that `dlg/`/`lib/` edits need an IDE-side refresh |
 
 ## Install
 
@@ -65,11 +66,39 @@ A value set in the patch is a composition-layer value: the settings page shows i
 
 ## Tools
 
-`aardio_docs` takes `query` (required), `scope` (`docs` | `examples` | `lib` | `all`, default `all`), and `limit` (default 12, maximum 40). It searches text files only and stops at 8000 files, 96 MB, or depth 10, reporting `truncated` when it hits a budget.
+### `aardio_docs` — search and read
+
+The search engine is built for an agent, not for a person reading a results page:
+
+| Input | Meaning |
+|---|---|
+| `query` | `listview checked` requires both terms in a file; use `"quoted phrase"` for adjacency and `-term` to exclude |
+| `scope` | `docs`, `examples`, `lib`, or `all` (default) |
+| `mode` | `all` (default) or `any`; a multi-term search with no hits retries `any` and says so in `relaxed` |
+| `context` | Lines around each hit, 0–4, default 1 |
+| `limit` / `perFile` | Total matches (default 12, max 40) and matches kept per file (default 2) |
+| `path` | Read a file instead of searching: absolute, or relative to the installation |
+
+Ranking rewards the evidence that actually answers an API question: a term that is the file's name, a term at the start of a line (a definition), a documentation page, and an `index.md`. Standalone uses of `string.save` outrank prefixes like `string.saveFiles`, a multi-term query only matches a file where the terms appear within 20 lines of each other, binary-looking files are skipped, and overlapping snippets are collapsed.
+
+`path` reads any text file inside the installation (400 lines per call, `offset`/`lines`) even when another tool's sandbox cannot reach that folder; paths outside the installation are refused.
+
+Searches stop at 12000 files, 256 MB, or a 2 MB file, reporting `truncated` when a budget is hit. The file list is cached for 30 seconds, so repeated queries in one turn are cheap.
+
+### `aardio_open` and `aardio_env`
 
 `aardio_open` takes `path`; a folder opens its `default.aproj` so the IDE restores the project instead of a bare file. It launches the IDE detached and returns immediately.
 
 `aardio_env` takes no arguments and is the first thing to call when a search finds nothing: it reports the resolved folder, whether it came from the setting, the environment, or detection, and which folders were probed.
+
+## Project rules in the system prompt
+
+Beyond the skills, the plugin adds one short system-prompt section (`dsh-aardio:project-rules`, order 10500, literal text):
+
+1. **Projects belong to the user.** The agent must not create or hand-write `default.aproj`; the user creates the project in the aardio IDE, and the agent only edits `main.aardio`, resources, and code.
+2. **`dlg/` and `lib/` changes need an IDE refresh.** After editing either, the agent must ask the user to reopen the project or restart the IDE, or the IDE keeps serving cached forms and libraries.
+
+These rules are stated once, in one place, so they can be replaced or removed without touching the tools. The section is registered only when the deployment provides `ctx.systemPrompt`; a composition without it keeps working.
 
 ## Bundled skills
 
@@ -103,7 +132,8 @@ Tests are offline and create their fixtures in the OS temp directory.
 | `client.js` | Browser half: the `plugins.row.config` page for `dsh-aardio#dsh-aardio` |
 | `lib/config.js` | Config schema and its peer resolution |
 | `lib/installation.js` | Path normalisation, probing, precedence, diagnostics |
-| `lib/search.js` | Bounded keyword search |
+| `lib/search.js` | Query parsing, ranking, and the bounded read |
+| `lib/prompt.js` | The always-on project rules |
 | `lib/skills.js` | Skill frontmatter and the provider |
 | `lib/tools.js` | The three tool definitions |
 | `skills/` | The bundled skills |

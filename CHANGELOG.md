@@ -2,13 +2,16 @@
 
 ## 1.0.0
 
-The first publishable release: the aardio folder is a setting, and the skills ship inside the package.
+The first publishable release: the aardio folder is a setting, the skills ship inside the package, and the search engine is built for an agent.
 
+- **A search engine instead of a grep.** `aardio_docs` accepts multi-term queries, `"quoted phrases"`, and `-exclusions`; ranks hits by file name, definition-position, documentation pages, and boundary-aligned symbol uses; returns context lines; collapses overlapping snippets; skips binary-looking files; only matches a multi-term query where the terms appear within 20 lines; and relaxes to any-term automatically when nothing matches.
+- **Read files through the same tool.** `aardio_docs` with `path` returns a bounded window of any text file inside the installation, which works even when another tool's sandbox cannot reach that folder. Paths outside the installation are refused.
+- **Two always-on project rules.** A system-prompt section (`dsh-aardio:project-rules`) tells the model that the user creates projects — no hand-written `default.aproj` — and that `dlg/`/`lib/` edits require an IDE-side refresh. The bundled skills were updated to agree with it, and `aardio-project` no longer offers hand-authored project scaffolding.
 - **The installation folder is configurable.** `Config.aardioRoot` is declared volatile, which is what makes DSH project a settings form for it, and a save applies in place without restarting the plugin. The form renders on the bundle's own page and on the row page, with a typed path, a native folder picker, save, and an auto-detect reset. No hard-coded path remains.
 - **Auto-detection and environment fallback.** `AARDIO_ROOT`/`AARDIO_HOME` and a probe of the usual install folders keep a fresh install working without any configuration.
 - **New tool `aardio_env`.** Reports the resolved folder, its source, whether `aardio.exe` is present, and every probed folder, so a wrong path is diagnosable without guessing.
 - **The bundled skills are installation-independent.** They no longer name an absolute aardio path; they send the model to `aardio_env` and `aardio_docs` instead. The `aardio` skill also gained the project-first procedure.
-- **Publishable packaging.** MIT license, English and Chinese READMEs, a Plugins-page detail image, localized display metadata, exported `./client` and `./locale/*.json`, an explicit `files` list, and an offline `node --test` suite covering installation resolution, search, skills, tools, and packaging.
+- **Publishable packaging.** MIT license, English and Chinese READMEs, a Plugins-page detail image, localized display metadata, exported `./client` and `./locale/*.json`, an explicit `files` list, repository/homepage/bugs pointing at `MFn233/dsh-aardio`, and an offline `node --test` suite covering configuration, installation resolution, search, skills, the prompt rules, tools, and packaging.
 - **Robust loading.** Host code imports only Node built-ins; the schemastery peer is resolved through the running installation when a linked checkout has no `node_modules`, and its absence degrades to environment detection instead of failing activation.
 
 ## 0.1.0
