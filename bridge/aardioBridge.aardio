@@ -186,22 +186,59 @@ button:hover{background:var(--l3)}
 </script>
 </body></html>`;
 
-var winform = win.form(text="dsh-aardio bridge"; right=720; bottom=560; bgcolor=0x171515);
+var winform = win.form(text="dsh-aardio bridge"; right=760; bottom=580; bgcolor=0x171515);
 winform.add(
-	fallback={cls="static";text="桥接已启动。等待 DSH 的 aardio_exec 请求…";left=20;top=20;right=700;bottom=510;z=1};
-	fallbackTip={cls="static";text="关掉这个窗口即停止桥接（不会影响 IDE 里其它脚本）。";left=20;top=516;right=700;bottom=540;z=2}
+	fallback={cls="static";text="桥接已启动。等待 DSH 的 aardio_exec 请求…";left=24;top=24;right=736;bottom=530;transparent=1;color=0xECE8E6;font=LOGFONT(h=-13);z=1};
+	fallbackTip={cls="static";text="关掉这个窗口即停止桥接（不会影响 IDE 里其它脚本）。";left=24;top=538;right=736;bottom=562;transparent=1;color=0xB8B2AD;font=LOGFONT(h=-12);z=2}
 );
 
 //WebView2 不可用时（缺少运行时）退回纯文本窗口，桥接功能不受影响。
 var wb;
-var webOk = call(function() {
+var webError = "";
+var htmlError = "";
+var pageReady = false;
+var webStatePath = dir ++ "web-state.json";
+
+var saveWebState = function() {
+	JSON.save(webStatePath, {
+		created = (wb !== null);
+		ready = pageReady;
+		createError = webError;
+		htmlError = htmlError;
+	});
+};
+
+var callOk, callErr = call(function() {
 	import web.view;
 	wb = web.view(winform);
-	wb.html = PAGE;
 });
+if (callOk !== true) {
+	webError = "web.view 创建失败：" ++ tostring(callErr);
+	wb = null;
+} elseif (!wb) {
+	webError = "web.view(winform) 返回空值";
+}
+saveWebState();
+
+//页面可能要在窗口显示、WebView2 初始化完成之后才能设置，失败就下次定时器再试。
+var loadPage = function() {
+	if (!wb || pageReady) {
+		return;
+	}
+	var ok, err = call(function() {
+		wb.html = PAGE;
+	});
+	if (ok === true) {
+		pageReady = true;
+		htmlError = "";
+	} else {
+		htmlError = tostring(err);
+	}
+	saveWebState();
+};
 
 var ui = function(expression) {
-	if (!wb) {
+	if (!wb || !pageReady) {
 		return;
 	}
 	call(function() {
@@ -228,7 +265,7 @@ var applyState = function(state) {
 
 //纯文本回退窗口里的状态行。
 var fallbackText = function(text) {
-	if (!wb) {
+	if (!wb || !pageReady) {
 		winform.fallback.text = text;
 	}
 };
@@ -643,24 +680,61 @@ JSON.save(infoPath, {
 	startedAt = startedAt;
 	dir = dir;
 	hwnd = winform.hwnd;
+	web = {created = (wb !== null); ready = pageReady; error = webError};
 });
 
-if (webOk && wb) {
+//页面就绪后才写页面内容；未就绪时用纯文本窗口说明原因。
+var initUi = function() {
+	if (!wb || !pageReady) {
+		var reason = webError;
+		if (reason === "" && htmlError !== "") {
+			reason = "页面加载失败：" ++ htmlError;
+		}
+		if (reason === "") {
+			reason = "WebView2 尚未就绪";
+		}
+		fallbackText("桥接已启动，但 WebView2 界面不可用，退回文本窗口。"
+			++ '\r\n' ++ "原因：" ++ string.left(reason, 300)
+			++ '\r\n' ++ "请求目录：" ++ dir
+			++ '\r\n' ++ "桥接功能正常，DSH 仍可调用 aardio_exec。");
+		return;
+	}
+
 	ui("setHeader(" ++ JSON.stringify(::Kernel32.GetCurrentProcessId()) ++ "," ++ JSON.stringify(dir) ++ ")");
 	ui('applyState({status:"idle"})');
 	logs({
 		{kind = "ok"; text = "桥接已启动，等待 DSH 的 aardio_exec 请求"};
 		{kind = "print"; text = "请求目录：" ++ dir};
 	});
-} else {
-	fallbackText("桥接已启动（WebView2 不可用，使用文本窗口）。" ++ '\r\n' ++ "请求目录：" ++ dir);
-}
+};
 
 winform.show();
-winform.setInterval(poll, 150);
+loadPage();
+
+//页面在窗口显示后才可能初始化完成；定时器里重试并补一次初始化。
+if (wb && !pageReady) {
+	winform.setTimeout(function() {
+		loadPage();
+		if (pageReady) {
+			initUi();
+		}
+	}, 500);
+}
+initUi();
+
+winform.setInterval(function() {
+	if (wb && !pageReady) {
+		loadPage();
+		if (pageReady) {
+			initUi();
+		}
+	}
+	poll();
+}, 150);
 win.loopMessage();
 
 cleanJob();
 io.remove(infoPath);
 io.remove(requestPath);
 io.remove(responsePath);
+io.remove(webStatePath);
