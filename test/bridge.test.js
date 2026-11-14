@@ -128,7 +128,7 @@ describe('readBridgeInfo', () => {
 
 	it('rejects an unsupported protocol version', async () => {
 		await writeHandshake({ version: 99 })
-		await assert.rejects(readBridgeInfo(), /unsupported format/u)
+		await assert.rejects(readBridgeInfo(), /older bridge protocol/u)
 	})
 
 	it('reads a live handshake', async () => {
