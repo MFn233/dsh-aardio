@@ -1,5 +1,7 @@
 # dsh-aardio
 
+[![test](https://github.com/MFn233/dsh-aardio/actions/workflows/test.yml/badge.svg)](https://github.com/MFn233/dsh-aardio/actions/workflows/test.yml)
+
 The [aardio](https://aardio.com) toolchain for DeepSeek Harness: three bundled authoring skills, a keyword search engine over your own aardio installation, always-on project rules, open-in-IDE, and a settings page that points the plugin at the aardio folder on your machine.
 
 English | [中文](README.zh.md) · [GitHub](https://github.com/MFn233/dsh-aardio)

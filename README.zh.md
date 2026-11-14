@@ -1,5 +1,7 @@
 # dsh-aardio
 
+[![test](https://github.com/MFn233/dsh-aardio/actions/workflows/test.yml/badge.svg)](https://github.com/MFn233/dsh-aardio/actions/workflows/test.yml)
+
 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 的 aardio 工具链插件：内置三个 aardio 编写技能、一个面向模型的文档搜索引擎、两条常驻的工程协作规则；可就地把文件或工程交给 aardio IDE 打开，并在插件页里选好 aardio 安装目录 —— 不再把路径写死在代码里。
 
 [English](README.md) | 中文 · [GitHub](https://github.com/MFn233/dsh-aardio)
