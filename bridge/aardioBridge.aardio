@@ -197,23 +197,34 @@ button:hover{background:var(--l3)}
   window.clearLog = function(){ logEl.innerHTML = ''; };
 
   //自定义标题栏：拖动、双击最大化、三个按钮都交给 aardio 处理。
+  //注意：web.view 占用了 window.external，导出的对象是 window.aardio。
+  //不要用 typeof 判断宿主方法（COM 代理下不可靠），直接调用并捕获异常。
+  function callHost(name){
+    try {
+      if (window.aardio) {
+        window.aardio[name]();
+        return true;
+      }
+    } catch (e) {}
+    return false;
+  }
+
   var bar = document.getElementById('titlebar');
   bar.addEventListener('mousedown', function(e){
     if (e.button !== 0 || e.target.closest('button')) return;
-    if (window.external && window.external.drag) window.external.drag();
+    callHost('drag');
   });
   bar.addEventListener('dblclick', function(e){
     if (e.target.closest('button')) return;
-    if (window.external && window.external.maximize) window.external.maximize();
+    callHost('maximize');
   });
   var buttons = bar.querySelectorAll('button[data-win]');
   for (var i = 0; i < buttons.length; i++) {
     buttons[i].addEventListener('click', function(){
       var action = this.getAttribute('data-win');
-      if (!window.external) return;
-      if (action === 'min') window.external.minimize();
-      else if (action === 'max') window.external.maximize();
-      else window.external.close();
+      if (action === 'min') callHost('minimize');
+      else if (action === 'max') callHost('maximize');
+      else callHost('close');
     });
   }
 
@@ -234,6 +245,9 @@ var wb;
 var webError = "";
 var htmlError = "";
 var pageReady = false;
+var externalOk = false;
+var shadowOk = false;
+var roundOk = false;
 var webStatePath = dir ++ "web-state.json";
 
 var saveWebState = function() {
@@ -242,6 +256,9 @@ var saveWebState = function() {
 		ready = pageReady;
 		createError = webError;
 		htmlError = htmlError;
+		externalOk = externalOk;
+		shadowOk = shadowOk;
+		roundOk = roundOk;
 	});
 };
 
@@ -260,7 +277,7 @@ saveWebState();
 //有 WebView 时：无边框 + 阴影/可拖拽边框，标题栏由页面实现；
 //没有 WebView 时：用 simpleWindow 补一个原生标题栏，至少还能拖动和关闭。
 if (wb) {
-	call(function() {
+	externalOk = call(function() {
 		wb.external = {
 			drag = function() {
 				winform.hitCaption();
@@ -275,23 +292,30 @@ if (wb) {
 				winform.hitClose();
 			};
 		};
-	});
-	call(function() {
+	}) === true;
+
+	shadowOk = call(function() {
 		import win.ui.shadow;
 		win.ui.shadow(winform);
-	});
+	}) === true;
+
+	//圆角窗口 + 最小尺寸（round 内部会调用 win.ui.minmax）。
+	roundOk = call(function() {
+		import win.region.round;
+		win.region.round(winform, 660, 500, 12);
+	}) === true;
 } else {
 	call(function() {
 		import win.ui.simpleWindow;
 		win.ui.simpleWindow(winform);
 	});
+	call(function() {
+		import win.ui.minmax;
+		win.ui.minmax(winform, 660, 500);
+	});
 }
 
-//限制窗口最小尺寸，避免拖到不可用的窄条。
-call(function() {
-	import win.ui.minmax;
-	win.ui.minmax(winform, 660, 500);
-});
+saveWebState();
 
 //页面可能要在窗口显示、WebView2 初始化完成之后才能设置，失败就下次定时器再试。
 var loadPage = function() {
