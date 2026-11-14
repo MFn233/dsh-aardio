@@ -120,16 +120,18 @@ Starting the bridge once turns verification into a tool call instead of a reques
 2. Leave the small window open. It stays idle until a request arrives; closing it stops the bridge.
 3. The agent can now call:
    - `aardio_exec({ code, mode: "check" })` — compile only, with line numbers;
-   - `aardio_exec({ code })` or `aardio_exec({ path })` — run and return everything `print(...)` received, the `return` value (as JSON), `compileError`, and `error`.
+   - `aardio_exec({ code })` or `aardio_exec({ path })` — run and return everything `print(...)` received, the `return` value (as JSON), `compileError`, and `error`;
+   - `aardio_exec({ path, replace: { oldCode, newCode } })` — replace one unique snippet in memory before compiling. This is the GUI smoke-test pattern: swap `win.loopMessage();` for bounded test code without touching the source file;
+   - `aardio_exec({ jobId })` — keep waiting for a run that outlived its timeout.
 
-How it works: two JSON files in `%TEMP%\dsh-aardio-bridge\`, a one-time token in `bridge.json`, and a nonce per request — no port, no firewall rule, no third-party library. The script mirrors the execution recipe aardio's own agent (AA / autos) uses in `lib\autos\tools\handlers.aardio`: `loadcode` to compile, `thread.invokeAndWait` to run in its own thread, `print` overridden to collect output, and `win.loopMessage()` replaced by a bounded wait so smoke tests cannot block forever.
+How it works: two JSON files in `%TEMP%\dsh-aardio-bridge\`, a one-time token in `bridge.json`, and a nonce per request — no port, no firewall rule, no third-party library. The script mirrors the execution recipe aardio's own agent (AA / autos) uses in `lib\autos\tools\handlers.aardio`: `loadcode` to compile, a worker thread to run, `print` overridden to collect output, and `win.loopMessage()` replaced by a bounded wait so smoke tests cannot block forever.
 
 Boundaries worth knowing:
 
 - **The IDE runs the code, not DSH.** Trust and risk are the same as pressing F5 in the IDE; the bridge only serves requests written by this plugin's tool (token + nonce), but any code you ask the agent to run does execute there.
-- **One request at a time**, serialized by the plugin; default timeout 15 s, maximum 120 s.
+- **One job at a time.** Requests are serialized by the plugin; default timeout 15 s, maximum 120 s.
+- **A timeout does not kill the code.** aardio has no safe thread termination, so the bridge keeps running and answers `pending` with a job id: the plugin re-polls until its own deadline, then names the job so `{ jobId }` can resume. If the code loops forever, stop it in the IDE.
 - **The bridge is optional.** Without it, `aardio_exec` explains how to start it, and everything else keeps working.
-- **No GUI automation yet.** v1 compiles and runs; driving windows, screenshots, and message pumps is a later step.
 
 ## Bundled skills
 

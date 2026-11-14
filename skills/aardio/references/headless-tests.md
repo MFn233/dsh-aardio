@@ -14,6 +14,20 @@ aardio_exec({ code: "var a = ", mode: "check" })   // 只编译，不执行
 
 返回里有 `print`（收集到的输出行）、`result`（`return` 值的 JSON）、`compileError`/`error`。
 
+**GUI 冒烟不要改源文件**：用 `replace` 在内存里把 `win.loopMessage();` 换成有限步骤，编译前替换、必须恰好命中一次：
+
+```text
+aardio_exec({
+  path: "/path/to/demo.aardio",
+  replace: {
+    oldCode: "win.loopMessage();",
+    newCode: "thread.delay(400); var bmp = winform.btn.snap(); bmp.save(io.fullpath(string.getenv(\"TEMP\") ++ \"\\smoke.png\")); winform.close(); return \"closed\";"
+  }
+})
+```
+
+**超时不等于停止**：代码超过 `timeoutMs` 仍在跑时，回复里会带 `jobId`；用 `aardio_exec({ jobId })` 继续等。死循环只能让用户在 IDE 里停止。
+
 ## 路径二：桥接没开 → 交给用户
 
 写一份 `xxx.test.aardio`，让用户 F5，把 JSON 贴回来。

@@ -199,9 +199,76 @@ describe('runBridgeCode', () => {
 		await writeHandshake()
 		await assert.rejects(
 			runBridgeCode({ code: 'var a = 1', timeoutMs: 300 }),
-			/did not answer within 300 ms/u,
+			/did not finish within 300 ms/u,
 		)
 		assert.equal(existsSync(join(directory, 'request.json')), false)
+	})
+
+	it('follows a pending job by polling until it answers', async () => {
+		await writeHandshake()
+		const actions = []
+		const stop = startFakeBridge((request) => {
+			actions.push(request.action)
+			if (request.action === 'run') return { pending: true, jobId: 'job-1' }
+			return { ok: true, result: 'finished', resultType: 'string' }
+		})
+		try {
+			const value = await runBridgeCode({ code: 'x', timeoutMs: 5000 })
+			assert.equal(value.result, 'finished')
+			assert.deepEqual(actions, ['run', 'poll'])
+		} finally {
+			stop()
+		}
+	})
+
+	it('resumes a job from its id without new code', async () => {
+		await writeHandshake()
+		let seen
+		const stop = startFakeBridge((request) => {
+			seen = request
+			return { ok: true, result: 'resumed', resultType: 'string' }
+		})
+		try {
+			const value = await runBridgeCode({ jobId: 'job-9', timeoutMs: 5000 })
+			assert.equal(value.result, 'resumed')
+			assert.equal(seen.action, 'poll')
+			assert.equal(seen.jobId, 'job-9')
+		} finally {
+			stop()
+		}
+	})
+
+	it('reports the job id when a run outlives the deadline', async () => {
+		await writeHandshake()
+		const stop = startFakeBridge(() => ({ pending: true, jobId: 'job-slow' }))
+		try {
+			await assert.rejects(
+				runBridgeCode({ code: 'x', timeoutMs: 400 }),
+				/still running after 400 ms \(job job-slow\)/u,
+			)
+		} finally {
+			stop()
+		}
+	})
+
+	it('passes in-memory replacements to the bridge', async () => {
+		await writeHandshake()
+		let seen
+		const stop = startFakeBridge((request) => {
+			seen = request
+			return { ok: true, result: 'ok' }
+		})
+		try {
+			await runBridgeCode({
+				code: 'win.loopMessage();',
+				replacements: [{ old: 'win.loopMessage();', new: 'winform.close();' }],
+				timeoutMs: 5000,
+			})
+			assert.deepEqual(seen.replacements, [{ old: 'win.loopMessage();', new: 'winform.close();' }])
+			assert.equal(seen.mode, 'run')
+		} finally {
+			stop()
+		}
 	})
 
 	it('serializes concurrent calls so one request file is never shared', async () => {
@@ -330,6 +397,41 @@ describe('aardio_exec tool', () => {
 			const value = await tool.execute({ code: 'var a = 1', mode: 'check' })
 			assert.equal(value.mode, 'check')
 			assert.match(tool.output.render({}, value)[0].text, /no syntax errors/u)
+			assert.match(tool.output.render({}, { ...value, replaced: true })[0].text, /in-memory replacement/u)
+		} finally {
+			stop()
+		}
+	})
+
+	it('maps replace to one in-memory replacement and flags it', async () => {
+		await writeHandshake()
+		let seen
+		const stop = startFakeBridge((request) => {
+			seen = request
+			return { ok: true, result: 'smoke ok' }
+		})
+		try {
+			const tool = defineExecTool({ bridgeScript: BRIDGE_SCRIPT })
+			const value = await tool.execute({
+				code: 'win.loopMessage();',
+				replace: { oldCode: 'win.loopMessage();', newCode: 'winform.close();' },
+			})
+			assert.equal(value.replaced, true)
+			assert.deepEqual(seen.replacements, [{ old: 'win.loopMessage();', new: 'winform.close();' }])
+		} finally {
+			stop()
+		}
+	})
+
+	it('resumes a pending job through jobId', async () => {
+		await writeHandshake()
+		const stop = startFakeBridge(() => ({ ok: true, result: 'job done', resultType: 'string' }))
+		try {
+			const tool = defineExecTool({ bridgeScript: BRIDGE_SCRIPT })
+			const value = await tool.execute({ jobId: 'job-7' })
+			assert.equal(value.source, 'job')
+			assert.equal(value.result, 'job done')
+			assert.equal(value.replaced, false)
 		} finally {
 			stop()
 		}

@@ -1,7 +1,7 @@
 //dsh-aardio bridge —— 在 aardio IDE 里按 F5 启动，关掉窗口即停止。
 //
 //它做三件事：
-//   1. 编译检查：loadcode 编译代码，编译错误带行号；
+//   1. 编译检查：loadcode 编译代码，编译错误带行号；支持内存替换（codeReplacement）；
 //   2. 执行代码：在独立线程里运行，捕获 print 输出、return 返回值与运行时错误；
 //   3. 把结果写成 JSON，交给 DSH 侧的 aardio_exec 工具。
 //
@@ -11,6 +11,13 @@
 //   - 覆盖 print，收集输出；
 //   - 把 win.loopMessage 变成有限等待，避免冒烟测试无限阻塞；
 //   - 在独立线程里跑，线程函数有独立的全局变量环境。
+//
+//关于「超时」：aardio 没有安全的线程终止手段（TerminateThread 会破坏运行时），
+//所以这里不让 UI 线程死等，而是：
+//   - 请求开始后最多等 REPLY_WAIT_MS 就回 pending（带 jobId），作业继续跑；
+//   - 之后每次 poll 请求再等 REPLY_WAIT_MS；
+//   - 结果留在内存里，直到被取走或超过 JOB_KEEP_MS。
+//这样死循环不会阻塞桥接窗口，DSH 侧可以放弃等待或继续轮询，由用户在 IDE 里停止。
 //
 //不要尝试把它发布成 EXE：它依赖 IDE 进程内的 loadcode。
 
@@ -27,179 +34,297 @@ var infoPath = dir ++ "bridge.json";
 var requestPath = dir ++ "request.json";
 var responsePath = dir ++ "response.json";
 
+//每次请求最多占用 UI 线程的时间；到点就回 pending，作业在后台继续。
+var REPLY_WAIT_MS = 8000;
+
+//已完成但还没被取走的结果保留多久。
+var JOB_KEEP_MS = 300000;
+
 //一次性 token：DSH 侧从 bridge.json 读取，双方都校验，避免误读其它请求。
 var token = string.format("%08x%08x", math.random(0x7FFFFFFF), time.tick());
 var startedAt = time.tick();
 
-var winform = win.form(text="dsh-aardio bridge — 等待请求…"; right=480; bottom=132);
+var winform = win.form(text="dsh-aardio bridge — 等待请求…"; right=520; bottom=132);
 winform.add(
-	info={cls="static";text="桥接已启动。等待 DSH 的 aardio_exec 请求…";left=14;top=14;right=466;bottom=72;z=1};
-	tip={cls="static";text="关掉这个窗口即停止桥接（不会影响 IDE 里其它脚本）。";left=14;top=76;right=466;bottom=120;z=2}
+	info={cls="static";text="桥接已启动。等待 DSH 的 aardio_exec 请求…";left=14;top=14;right=506;bottom=72;z=1};
+	tip={cls="static";text="关掉这个窗口即停止桥接（不会影响 IDE 里其它脚本）。";left=14;top=76;right=506;bottom=120;z=2}
 );
 
-//编译检查或执行；mode 为 "check" 时只编译不运行。
-var runCode = function(code, mode) {
-	var func, err = loadcode(code);
-	if (!func) {
-		return {
-			ok = false;
-			phase = "compile";
-			compileError = tostring(err);
-			error = "";
-			result = "";
-			resultType = "";
-			print = {};
-			durationMs = 0;
-		};
-	}
+//当前作业：{ key; handle; nonce; deadline; startedAt; result; finishedAt }
+var job = null;
 
-	if (mode == "check") {
-		return {
-			ok = true;
-			phase = "check";
-			compileError = "";
-			error = "";
-			result = "";
-			resultType = "";
-			print = {};
-			durationMs = 0;
-		};
-	}
+var status = function(text) {
+	winform.info.text = text;
+};
 
-	var before = time.tick();
-	var out, invokeErr = thread.invokeAndWait(function(func) {
-		import JSON;
-		import win;
+var respond = function(nonce, payload) {
+	payload.nonce = nonce;
+	payload.token = token;
+	JSON.save(responsePath, payload);
+};
 
-		_CONSOLE_NO_PAUSE = true;
-
-		var output = {};
-		..print = function(...) {
-			if (#output >= 200) {
-				return;
-			}
-			var args = [...];
-			var line = "";
-			for (i = 1; #args) {
-				line ++= tostring(args[i]);
-			}
-			..table.push(output, line);
-		};
-
-		//冒烟代码里如果写了 win.loopMessage()，在这里变成有限等待，不会永久阻塞。
-		..win.loopMessage = lambda() ..thread.delay(5000);
-
-		var ok, value, valueErr = call(func);
-
-		var text = "";
-		var textType = "null";
-		var errorText = "";
-
-		if (ok) {
-			var okJson, json = call(function(v) {
-				return ..JSON.stringify(v);
-			}, null, value);
-
-			if (okJson) {
-				text = json;
-			} else {
-				text = tostring(value);
-			}
-			textType = tostring(type(value));
-		} else {
-			// call() 在失败时把错误放在第一个返回值里，第 2 个返回值通常为空。
-			var message;
-			if (value) {
-				message = value;
-			} else {
-				message = valueErr;
-			}
-			errorText = tostring(message);
-		}
-
-		if (#text > 200000) {
-			text = ..string.left(text, 200000) ++ "…[已截断]";
-		}
-
-		return {
-			ok = ok;
-			value = text;
-			valueType = textType;
-			error = errorText;
-			print = output;
-		};
-	}, func);
-
-	var elapsed = time.tick() - before;
-	if (!out) {
-		return {
-			ok = false;
-			phase = "run";
-			compileError = "";
-			error = tostring(invokeErr);
-			result = "";
-			resultType = "";
-			print = {};
-			durationMs = elapsed;
-		};
-	}
-
+var emptyResult = function(phase, ok) {
 	return {
-		ok = (out.ok === true);
-		phase = "run";
+		ok = ok;
+		phase = phase;
 		compileError = "";
-		error = out.error;
-		result = out.value;
-		resultType = out.valueType;
-		print = out.print;
-		durationMs = elapsed;
+		error = "";
+		result = "";
+		resultType = "";
+		print = {};
+		durationMs = 0;
 	};
 };
 
-var handled = 0;
+//按顺序应用内存替换；每一处都必须恰好命中一次。
+var applyReplacements = function(code, list) {
+	if (!list) {
+		return code;
+	}
+	if (type(list) != "table") {
+		return null, "replacements 必须是数组";
+	}
+	if (!#list) {
+		return code;
+	}
+
+	code = string.crlf(code);
+	for (i = 1; #list) {
+		var item = list[i];
+		if (type(item) != "table") {
+			return null, "第 " ++ i ++ " 处替换不是对象";
+		}
+		var old = item.old;
+		var new = item.new;
+		if (type(old) != "string") {
+			return null, "第 " ++ i ++ " 处替换缺少 oldCode";
+		}
+		if (!#old) {
+			return null, "第 " ++ i ++ " 处替换的 oldCode 为空";
+		}
+		if (type(new) != "string") {
+			new = "";
+		}
+
+		var count;
+		code, count = string.replaceLiteral(code, string.crlf(old), string.crlf(new));
+		if (count !== 1) {
+			return null, "第 " ++ i ++ " 处替换命中了 " ++ count ++ " 次，必须恰好命中一次";
+		}
+	}
+
+	return code;
+};
+
+var cleanJob = function() {
+	if (!job) {
+		return;
+	}
+	if (job.key) {
+		thread.set(job.key, null);
+	}
+	if (job.handle) {
+		raw.closeHandle(job.handle);
+	}
+	job = null;
+};
+
+//启动一个后台作业；compile / check 直接在 UI 线程返回。
+var startJob = function(request) {
+	var nonce = request.nonce;
+	var code, replaceErr = applyReplacements(request.code, request.replacements);
+	if (!code) {
+		var failed = emptyResult("compile", false);
+		failed.compileError = tostring(replaceErr);
+		respond(nonce, failed);
+		return;
+	}
+
+	var func, err = loadcode(code);
+	if (!func) {
+		var compile = emptyResult("compile", false);
+		compile.compileError = tostring(err);
+		respond(nonce, compile);
+		return;
+	}
+
+	if (request.mode == "check") {
+		respond(nonce, emptyResult("check", true));
+		return;
+	}
+
+	var key = "(dsh-aardio:job:" ++ nonce ++ ")";
+	thread.set(key, null);
+
+	var handle = thread.create(
+		function(func, key) {
+			import JSON;
+			import win;
+
+			_CONSOLE_NO_PAUSE = true;
+
+			var output = {};
+			..print = function(...) {
+				if (#output >= 200) {
+					return;
+				}
+				var args = [...];
+				var line = "";
+				for (i = 1; #args) {
+					line ++= tostring(args[i]);
+				}
+				..table.push(output, line);
+			};
+
+			//冒烟代码里如果写了 win.loopMessage()，在这里变成有限等待，不会永久阻塞。
+			..win.loopMessage = lambda() ..thread.delay(5000);
+
+			var ok, value, valueErr = call(func);
+
+			var text = "";
+			var textType = "null";
+			var errorText = "";
+
+			if (ok) {
+				var okJson, json = call(function(v) {
+					return ..JSON.stringify(v);
+				}, null, value);
+
+				if (okJson) {
+					text = json;
+				} else {
+					text = tostring(value);
+				}
+				textType = tostring(type(value));
+			} else {
+				// call() 在失败时把错误放在第一个返回值里，第 2 个返回值通常为空。
+				var message;
+				if (value) {
+					message = value;
+				} else {
+					message = valueErr;
+				}
+				errorText = tostring(message);
+			}
+
+			if (#text > 200000) {
+				text = ..string.left(text, 200000) ++ "…[已截断]";
+			}
+
+			..thread.set(key, {
+				ok = ok;
+				value = text;
+				valueType = textType;
+				error = errorText;
+				print = output;
+			});
+		}, func, key);
+
+	if (!handle) {
+		var startFailed = emptyResult("run", false);
+		startFailed.error = "无法创建执行线程";
+		respond(nonce, startFailed);
+		return;
+	}
+
+	job = {
+		key = key;
+		handle = handle;
+		nonce = nonce;
+		deadline = time.tick() + REPLY_WAIT_MS;
+		startedAt = time.tick();
+		result = null;
+		finishedAt = null;
+	};
+	status("运行中…（超过 " ++ (REPLY_WAIT_MS / 1000) ++ " 秒可继续轮询，关窗即停止）");
+};
+
+//把作业结果变成响应负载。
+var jobPayload = function(result, elapsed) {
+	var payload = emptyResult("run", result.ok === true);
+	payload.error = result.error;
+	payload.result = result.value;
+	payload.resultType = result.valueType;
+	payload.print = result.print;
+	payload.durationMs = elapsed;
+	return payload;
+};
 
 var poll = function() {
-	if (!io.exists(requestPath)) {
+	//一次只接受一个作业；有作业时只处理与它相关的 poll。
+	if (io.exists(requestPath)) {
+		var raw = string.load(requestPath);
+		io.remove(requestPath);
+		if (raw) {
+			var request = JSON.tryParse(raw);
+			if (request && request.token === token) {
+				var action = request.action;
+				if (action == "poll") {
+					if (job) {
+						if (request.jobId == job.key) {
+							job.nonce = request.nonce;
+							job.deadline = time.tick() + REPLY_WAIT_MS;
+						} else {
+							var other = emptyResult("run", false);
+							other.error = "当前作业不是 " ++ tostring(request.jobId);
+							respond(request.nonce, other);
+						}
+					} else {
+						var gone = emptyResult("run", false);
+						gone.error = "没有正在运行或可取的作业，请重新提交代码";
+						respond(request.nonce, gone);
+					}
+				} elseif (job) {
+					var busy = emptyResult("run", false);
+					busy.pending = true;
+					busy.busy = true;
+					busy.jobId = job.key;
+					busy.error = "桥接正忙，请用 aardio_exec({jobId}) 继续等待";
+					respond(request.nonce, busy);
+				} elseif (!request.code) {
+					var missing = emptyResult("run", false);
+					missing.error = "请求缺少 code";
+					respond(request.nonce, missing);
+				} else {
+					startJob(request);
+				}
+			}
+		}
+	}
+
+	if (!job) {
 		return;
 	}
 
-	var raw = string.load(requestPath);
-	io.remove(requestPath);
-	if (!raw) {
-		return;
-	}
-	if (!#raw) {
-		return;
+	if (!job.result) {
+		job.result = thread.get(job.key);
+		if (job.result) {
+			job.finishedAt = time.tick();
+		}
 	}
 
-	var request = JSON.tryParse(raw);
-	if (!request) {
-		return;
-	}
-
-	if (request.token !== token) {
-		return;
-	}
-
-	var code = request.code;
-	if (!code) {
-		return;
-	}
-	if (!#code) {
+	if (job.result) {
+		//结果没被取走就保留一段时间，方便 DSH 侧超时后继续轮询。
+		if (job.nonce) {
+			respond(job.nonce, jobPayload(job.result, job.finishedAt - job.startedAt));
+			cleanJob();
+			status("空闲。关掉窗口即停止。");
+		} elseif (time.tick() - job.finishedAt > JOB_KEEP_MS) {
+			cleanJob();
+			status("空闲（上一次结果已过期丢弃）。");
+		}
 		return;
 	}
 
-	var result = runCode(code, request.mode);
-	result.token = token;
-	result.nonce = request.nonce;
-	if (!result.print) {
-		result.print = {};
+	if (job.nonce && time.tick() >= job.deadline) {
+		var pending = emptyResult("run", false);
+		pending.pending = true;
+		pending.jobId = job.key;
+		pending.durationMs = time.tick() - job.startedAt;
+		respond(job.nonce, pending);
+		job.nonce = null;
+		status("运行中…（等待 DSH 继续轮询）");
 	}
-
-	JSON.save(responsePath, result);
-
-	handled++;
-	winform.info.text = "已处理 " ++ handled ++ " 次请求。关掉窗口即停止。";
 };
 
 JSON.save(infoPath, {
@@ -214,6 +339,7 @@ winform.show();
 winform.setInterval(poll, 150);
 win.loopMessage();
 
+cleanJob();
 io.remove(infoPath);
 io.remove(requestPath);
 io.remove(responsePath);

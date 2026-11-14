@@ -120,16 +120,18 @@ aardio 自带 `util.testRunner` —— 一个专为 Agent 设计的 Jest/PyTest 
 2. 留着那个小窗口。没有请求时它一直空闲；关掉窗口就停止桥接。
 3. 之后模型可以直接调用：
    - `aardio_exec({ code, mode: "check" })`：只编译，报错带行号；
-   - `aardio_exec({ code })` 或 `aardio_exec({ path })`：执行并回传 `print(...)` 的全部输出、`return` 值（JSON）、`compileError` 与 `error`。
+   - `aardio_exec({ code })` 或 `aardio_exec({ path })`：执行并回传 `print(...)` 的全部输出、`return` 值（JSON）、`compileError` 与 `error`；
+   - `aardio_exec({ path, replace: { oldCode, newCode } })`：编译前在内存里替换一处唯一片段。GUI 冒烟的标准手法：把 `win.loopMessage();` 换成有限测试代码，源文件不动；
+   - `aardio_exec({ jobId })`：继续等待超时前没跑完的作业。
 
-实现方式：`%TEMP%\dsh-aardio-bridge\` 下两个 JSON 文件 + `bridge.json` 里的一次性 token + 每个请求的 nonce —— 不开端口、不加防火墙规则、不装第三方库。执行逻辑照抄 aardio 自带 Agent（AA / autos）在 `lib\autos\tools\handlers.aardio` 里的做法：`loadcode` 编译、`thread.invokeAndWait` 在独立线程执行、覆盖 `print` 收集输出、把 `win.loopMessage()` 换成有限等待（冒烟测试不会永久阻塞）。
+实现方式：`%TEMP%\dsh-aardio-bridge\` 下两个 JSON 文件 + `bridge.json` 里的一次性 token + 每个请求的 nonce —— 不开端口、不加防火墙规则、不装第三方库。执行逻辑照抄 aardio 自带 Agent（AA / autos）在 `lib\autos\tools\handlers.aardio` 里的做法：`loadcode` 编译、工作线程执行、覆盖 `print` 收集输出、把 `win.loopMessage()` 换成有限等待（冒烟测试不会永久阻塞）。
 
 需要知道的边界：
 
 - **跑代码的是你的 IDE，不是 DSH。** 风险和你在 IDE 里按 F5 一样；桥接只接受本插件工具写的请求（token + nonce），但你让模型执行的代码确实会在那里运行。
-- **一次只处理一个请求**，插件侧串行；默认超时 15 秒，最大 120 秒。
+- **一次只跑一个作业**，插件侧串行；默认超时 15 秒，最大 120 秒。
+- **超时不会杀掉正在跑的代码。** aardio 没有安全的线程终止手段，所以桥接会继续跑，并回 `pending` + `jobId`：插件在自己的截止时间内继续轮询，超了就报出 jobId，可用 `{ jobId }` 接着等。死循环请在 IDE 里停止。
 - **桥接是可选的。** 没启动时 `aardio_exec` 会告诉你怎么启动，其余功能不受影响。
-- **暂不支持 GUI 自动化。** v1 只做编译与执行；截图、模拟点击、消息泵留到下一步。
 
 ## 内置技能的优先级
 
