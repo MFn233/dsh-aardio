@@ -126,7 +126,7 @@ aardio 自带 `util.testRunner` —— 一个专为 Agent 设计的 Jest/PyTest 
    - `aardio_exec({ path, replace: { oldCode, newCode } })`：编译前在内存里替换一处唯一片段。GUI 冒烟的标准手法：把 `win.loopMessage();` 换成有限测试代码，源文件不动；
    - `aardio_exec({ jobId })`：继续等待超时前没跑完的作业。
 
-实现方式：`%TEMP%\dsh-aardio-bridge\` 下两个 JSON 文件 + `bridge.json` 里的一次性 token + 每个请求的 nonce —— 不开端口、不加防火墙规则、不装第三方库。窗口是 WebView2 页面，配色照搬宿主自己的深色主题（底色 `rgb(21,21,23)`、卡片 `rgb(35,35,36)`、描边 `rgba(255,255,255,.08)`）；没有 WebView2 时自动退回纯文本窗口。执行逻辑照抄 aardio 自带 Agent（AA / autos）在 `lib\autos\tools\handlers.aardio` 里的做法：`loadcode` 编译、工作线程执行、覆盖 `print` 收集输出。
+实现方式：每个 DSH 进程在 `%TEMP%\dsh-aardio-bridge\` 下有自己的请求/响应对，`bridge.json` 里放一次性 token，每个请求带 nonce —— 不开端口、不加防火墙规则、不装第三方库；两个 DSH 实例可以共用一个桥接，不会互相读到或删掉对方的文件。窗口是 WebView2 页面，配色照搬宿主自己的深色主题（底色 `rgb(21,21,23)`、卡片 `rgb(35,35,36)`、描边 `rgba(255,255,255,.08)`）；没有 WebView2 时自动退回纯文本窗口。执行逻辑照抄 aardio 自带 Agent（AA / autos）在 `lib\autos\tools\handlers.aardio` 里的做法：`loadcode` 编译、工作线程执行、覆盖 `print` 收集输出。
 
 需要知道的边界：
 

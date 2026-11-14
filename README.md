@@ -126,7 +126,7 @@ Starting the bridge once turns verification into a tool call instead of a reques
    - `aardio_exec({ path, replace: { oldCode, newCode } })` — replace one unique snippet in memory before compiling. This is the GUI smoke-test pattern: swap `win.loopMessage();` for bounded test code without touching the source file;
    - `aardio_exec({ jobId })` — keep waiting for a run that outlived its timeout.
 
-How it works: two JSON files in `%TEMP%\dsh-aardio-bridge\`, a one-time token in `bridge.json`, and a nonce per request — no port, no firewall rule, no third-party library. The window is a WebView2 page styled with the host's own dark palette (`rgb(21,21,23)` base, `rgb(35,35,36)` cards, `rgba(255,255,255,.08)` borders), falling back to a plain text window when WebView2 is missing. The script mirrors the execution recipe aardio's own agent (AA / autos) uses in `lib\autos\tools\handlers.aardio`: `loadcode` to compile, a worker thread to run, and `print` overridden to collect output.
+How it works: one request/response file pair per DSH process under `%TEMP%\dsh-aardio-bridge\`, a one-time token in `bridge.json`, and a nonce per request — no port, no firewall rule, no third-party library, and two DSH instances can share one bridge without reading or deleting each other's files. The window is a WebView2 page styled with the host's own dark palette (`rgb(21,21,23)` base, `rgb(35,35,36)` cards, `rgba(255,255,255,.08)` borders), falling back to a plain text window when WebView2 is missing. The script mirrors the execution recipe aardio's own agent (AA / autos) uses in `lib\autos\tools\handlers.aardio`: `loadcode` to compile, a worker thread to run, and `print` overridden to collect output.
 
 Boundaries worth knowing:
 

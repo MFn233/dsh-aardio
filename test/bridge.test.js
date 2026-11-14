@@ -3,11 +3,10 @@
  *
  * The real bridge is aardio code that only runs inside the IDE, so the Node
  * side is tested the way the plugin actually talks to it: a directory, a
- * handshake file, one request file, one response file.
+ * handshake file, one request file per client, and a reply named by `replyTo`.
  */
 import assert from 'node:assert/strict'
 import { mkdtemp, readdir, rm, writeFile, readFile } from 'node:fs/promises'
-import { existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import process from 'node:process'
@@ -37,7 +36,8 @@ async function writeHandshake(options = {}) {
 }
 
 /**
- * Start a fake bridge that answers request.json the way the aardio script does.
+ * Start a fake bridge that answers the client's request file the way the
+ * aardio script does: any `request-*.json`, reply to the `replyTo` it names.
  * @param respond - builds the response payload from the request.
  * @returns a stop function.
  */
@@ -47,9 +47,9 @@ function startFakeBridge(respond) {
 	let handled = 0
 	const tick = async () => {
 		if (busy) return
-		const requestPath = join(directory, 'request.json')
-		const responsePath = join(directory, 'response.json')
-		if (!existsSync(requestPath)) return
+		const pending = (await readdir(directory)).find((name) => name.startsWith('request-') && name.endsWith('.json'))
+		if (pending === undefined) return
+		const requestPath = join(directory, pending)
 		busy = true
 		try {
 			let request
@@ -62,6 +62,7 @@ function startFakeBridge(respond) {
 			handled += 1
 			const payload = await respond(request, handled)
 			if (payload === undefined) return
+			const responsePath = join(directory, typeof request.replyTo === 'string' ? request.replyTo : 'response.json')
 			await writeFile(responsePath, JSON.stringify({
 				token: request.token,
 				nonce: request.nonce,
@@ -96,9 +97,10 @@ after(async () => {
 })
 
 beforeEach(async () => {
-	for (const name of ['bridge.json', 'request.json', 'response.json']) {
-		await rm(join(directory, name), { force: true })
-	}
+	const stale = await readdir(directory)
+	await Promise.all(stale
+		.filter((name) => name === 'bridge.json' || /^(?:request|response)-.*\.json$/u.test(name))
+		.map((name) => rm(join(directory, name), { force: true })))
 })
 
 describe('isProcessAlive', () => {
@@ -201,7 +203,23 @@ describe('runBridgeCode', () => {
 			runBridgeCode({ code: 'var a = 1', timeoutMs: 300 }),
 			/did not finish within 300 ms/u,
 		)
-		assert.equal(existsSync(join(directory, 'request.json')), false)
+		assert.equal((await readdir(directory)).some((name) => name.startsWith('request-')), false)
+	})
+
+	it('names its own request and reply files so a second DSH instance cannot collide', async () => {
+		await writeHandshake()
+		let seen
+		const stop = startFakeBridge((request) => {
+			seen = request
+			return { ok: true, result: '1', resultType: 'number' }
+		})
+		try {
+			const value = await runBridgeCode({ code: '1', timeoutMs: 4000 })
+			assert.equal(value.result, '1')
+			assert.match(seen.replyTo, /^response-\d+-[0-9a-f]{8}\.json$/u)
+		} finally {
+			stop()
+		}
 	})
 
 	it('follows a pending job by polling until it answers', async () => {

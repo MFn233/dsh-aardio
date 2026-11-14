@@ -24,6 +24,7 @@
 import win.ui;
 import win;
 import io;
+import fsys;
 import JSON;
 import thread;
 
@@ -422,10 +423,13 @@ var cleanJob = function() {
 	job = null;
 };
 
-var respond = function(nonce, payload) {
+//每个 DSH 客户端带着自己的 replyTo 文件名，响应写回各自的文件。
+var replyPath = responsePath;
+
+var respond = function(nonce, payload, target) {
 	payload.nonce = nonce;
 	payload.token = token;
-	JSON.save(responsePath, payload);
+	JSON.save(target ? target : replyPath, payload);
 };
 
 var emptyResult = function(phase, ok) {
@@ -648,6 +652,7 @@ var startJob = function(request) {
 		source = summary;
 		mode = tostring(request.mode);
 		code = codePreview(code);
+		reply = replyPath;
 	};
 
 	logs({ {kind = "run"; text = "开始执行（" ++ summary ++ "）"} });
@@ -692,19 +697,45 @@ var flushPrint = function() {
 	logs(fresh);
 };
 
+//每个 DSH 客户端用自己的 request-<id>.json，避免两个实例互相覆盖请求。
+var findRequest = function() {
+	var files = fsys.list(dir, null, "request-*.json");
+	if (!files) {
+		return null;
+	}
+	for (name, path in files) {
+		if (type(name) == "string" && string.right(name, 5) == ".json") {
+			return path;
+		}
+	}
+	return null;
+};
+
 var poll = function() {
 	//一次只接受一个作业；有作业时只处理与它相关的 poll。
-	if (io.exists(requestPath)) {
-		var raw = string.load(requestPath);
-		io.remove(requestPath);
+	var requestFile = findRequest();
+	if (requestFile) {
+		var raw = string.load(requestFile);
+		io.remove(requestFile);
 		if (raw) {
 			var request = JSON.tryParse(raw);
 			if (request && request.token === token) {
+				var replyName = request.replyTo;
+				if (type(replyName) != "string" || !#replyName
+					|| string.indexOf(replyName, "..") !== null
+					|| string.indexOf(replyName, "\\") !== null
+					|| string.indexOf(replyName, "/") !== null
+					|| string.right(replyName, 5) != ".json") {
+					replyName = "response.json";
+				}
+				replyPath = dir ++ replyName;
+
 				var action = request.action;
 				if (action == "poll") {
 					if (job) {
 						if (request.jobId == job.key) {
 							job.nonce = request.nonce;
+							job.reply = replyPath;
 							job.deadline = time.tick() + REPLY_WAIT_MS;
 							logs({ {kind = "warn"; text = "DSH 继续轮询（作业仍在跑）"} });
 						} else {
@@ -754,7 +785,7 @@ var poll = function() {
 		if (job.nonce) {
 			var elapsed = job.finishedAt - job.startedAt;
 			flushPrint();
-			respond(job.nonce, jobPayload(job.result, elapsed));
+			respond(job.nonce, jobPayload(job.result, elapsed), job.reply);
 			var kind = "ok";
 			var text = "完成（" ++ elapsed ++ " ms）";
 			if (!job.result.ok) {
@@ -785,14 +816,14 @@ var poll = function() {
 		pending.pending = true;
 		pending.jobId = job.key;
 		pending.durationMs = time.tick() - job.startedAt;
-		respond(job.nonce, pending);
+		respond(job.nonce, pending, job.reply);
 		job.nonce = null;
 		logs({ {kind = "warn"; text = "超过 " ++ (REPLY_WAIT_MS / 1000) ++ " 秒仍未结束，回 pending；作业继续运行"} });
 	}
 };
 
 JSON.save(infoPath, {
-	version = 1;
+	version = 2;
 	token = token;
 	pid = ::Kernel32.GetCurrentProcessId();
 	startedAt = startedAt;
@@ -865,3 +896,16 @@ io.remove(infoPath);
 io.remove(requestPath);
 io.remove(responsePath);
 io.remove(webStatePath);
+
+//清掉各客户端留下的请求/响应文件（不动 bridge.json，它可能是另一个桥接实例的）。
+for (i = 1; 2) {
+	var mask = (i == 1) ? "request-*.json" : "response-*.json";
+	var leftovers = fsys.list(dir, null, mask);
+	if (leftovers) {
+		for (name, path in leftovers) {
+			if (type(name) == "string") {
+				io.remove(path);
+			}
+		}
+	}
+}
